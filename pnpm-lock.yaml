@@ -14,6 +14,9 @@ importers:
 
   apps/webhook:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.79.0
+        version: 0.79.0(zod@4.3.6)
       '@eximpe-bot/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -78,6 +81,19 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@anthropic-ai/sdk@0.79.0':
+    resolution: {integrity: sha512-ietmtM6glcnnrWq26H+BZm8J07iay9Cob6hRzDTr/A9QWF1m2T//TQhFO4MTKcZht2/7LS8bG9wUYEhcizKRnA==}
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  '@babel/runtime@7.29.2':
+    resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
+    engines: {node: '>=6.9.0'}
 
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
@@ -756,6 +772,10 @@ packages:
   js-tiktoken@1.0.21:
     resolution: {integrity: sha512-biOj/6M5qdgx5TKjDnFT1ymSpM5tbd3ylwDtrQvFQSu0Z7bBYko2dF+W/aUkXUPuk6IVpRxk/3Q2sHOzGlS36g==}
 
+  json-schema-to-ts@3.1.1:
+    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
+    engines: {node: '>=16'}
+
   langchain@1.2.33:
     resolution: {integrity: sha512-6Z+4wYCC3j6AxNshX5sNKMlIdcQwtiTujH2shSWEsQ4F9rXgCC9RtN5gQbJwCXRKT4Q8CwOVQWVRAwivQ0KzZg==}
     engines: {node: '>=20'}
@@ -1072,6 +1092,9 @@ packages:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
 
+  ts-algebra@2.0.0:
+    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
+
   ts-node-dev@2.0.0:
     resolution: {integrity: sha512-ywMrhCfH6M75yftYvrvNarLEY+SUXtUvU8/0Z6llrHQVBx12GiFk5sStF8UdfE/yfzk9IAq7O5EEbTQsxlBI8w==}
     engines: {node: '>=0.8.0'}
@@ -1200,6 +1223,14 @@ packages:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
 snapshots:
+
+  '@anthropic-ai/sdk@0.79.0(zod@4.3.6)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+    optionalDependencies:
+      zod: 4.3.6
+
+  '@babel/runtime@7.29.2': {}
 
   '@cfworker/json-schema@4.1.1': {}
 
@@ -1929,6 +1960,11 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
 
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      '@babel/runtime': 7.29.2
+      ts-algebra: 2.0.0
+
   langchain@1.2.33(@langchain/core@1.1.33(ws@8.19.0))(ws@8.19.0):
     dependencies:
       '@langchain/core': 1.1.33(ws@8.19.0)
@@ -2229,6 +2265,8 @@ snapshots:
   tr46@0.0.3: {}
 
   tree-kill@1.2.2: {}
+
+  ts-algebra@2.0.0: {}
 
   ts-node-dev@2.0.0(@types/node@20.19.37)(typescript@5.9.3):
     dependencies:

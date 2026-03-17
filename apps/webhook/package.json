@@ -7,6 +7,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.79.0",
     "@eximpe-bot/shared": "workspace:*",
     "@langchain/textsplitters": "^1.0.1",
     "@tavily/core": "^0.7.2",
