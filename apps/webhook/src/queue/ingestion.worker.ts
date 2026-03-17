@@ -190,7 +190,7 @@ export function startIngestionWorker(): Worker {
     processIngestionJob,
     {
       connection:  getRedis(),
-      concurrency: 3,
+      concurrency: 1,
     },
   );
 
