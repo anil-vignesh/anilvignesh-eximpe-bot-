@@ -9,6 +9,7 @@
   "dependencies": {
     "@eximpe-bot/shared": "workspace:*",
     "@langchain/textsplitters": "^1.0.1",
+    "@tavily/core": "^0.7.2",
     "axios": "^1.13.6",
     "bullmq": "^5.71.0",
     "cheerio": "^1.2.0",
