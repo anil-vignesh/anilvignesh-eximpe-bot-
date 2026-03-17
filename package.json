@@ -2,6 +2,7 @@
   "name": "eximpe-bot",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:webhook": "pnpm --filter webhook dev",
