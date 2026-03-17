@@ -28,7 +28,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     .single();
 
   if (botErr || !bot) {
-    res.status(404).json({ error: 'Bot not found', debug: botErr?.message ?? 'no row' });
+    res.status(404).json({ error: 'Bot not found' });
     return;
   }
 
