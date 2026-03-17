@@ -1,12 +1,12 @@
-import VoyageAI from 'voyageai';
+import { VoyageAIClient } from 'voyageai';
 
-let _client: VoyageAI | null = null;
+let _client: VoyageAIClient | null = null;
 
-function getClient(): VoyageAI {
+function getClient(): VoyageAIClient {
   if (!_client) {
     const apiKey = process.env.VOYAGE_API_KEY;
     if (!apiKey) throw new Error('VOYAGE_API_KEY is not set');
-    _client = new VoyageAI({ apiKey });
+    _client = new VoyageAIClient({ apiKey });
   }
   return _client;
 }

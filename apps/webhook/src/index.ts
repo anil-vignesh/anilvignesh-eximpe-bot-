@@ -1,12 +1,12 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { type Express } from 'express';
 import telegramRouter from './routes/telegram';
 import whatsappRouter from './routes/whatsapp';
 import botsRouter from './routes/bots';
 import { startIngestionWorker } from './queue/ingestion.worker';
 import { startCrawlWorker } from './queue/crawl.worker';
 
-const app  = express();
+const app: Express = express();
 const PORT = process.env.PORT ?? 3001;
 
 app.use(express.json());

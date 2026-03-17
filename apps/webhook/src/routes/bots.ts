@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { db } from '@eximpe-bot/shared';
 import { registerWebhook, deregisterWebhook } from '../services/telegramWebhook';
 
-const router = Router();
+const router: Router = Router();
 
 /**
  * PATCH /api/bots/:id/status

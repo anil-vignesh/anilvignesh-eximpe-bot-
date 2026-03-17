@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 
-const router = Router();
+const router: Router = Router();
 
 // V2 — placeholder
 router.get('/', (req: Request, res: Response) => {

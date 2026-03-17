@@ -5,7 +5,7 @@ import { parseTelegramUpdate, sendTelegramMessage, sendTelegramGreeting } from '
 import { runPipeline } from '../pipeline/index';
 import { logAndLearn } from '../pipeline/experienceWriter';
 
-const router = Router();
+const router: Router = Router();
 
 router.post('/:botId', async (req: Request, res: Response) => {
   const { botId } = req.params;

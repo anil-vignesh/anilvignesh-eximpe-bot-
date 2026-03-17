@@ -31,10 +31,11 @@ async function extractFromUrl(url: string): Promise<string> {
 }
 
 async function extractFromPdf(buffer: Buffer): Promise<string> {
-  // Dynamic import to avoid issues with pdf-parse test file detection
-  const pdfParse = (await import('pdf-parse')).default;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfModule = await import('pdf-parse') as any;
+  const pdfParse = pdfModule.default ?? pdfModule;
   const data = await pdfParse(buffer);
-  return data.text;
+  return data.text as string;
 }
 
 function extractFromMarkdown(content: string): string {

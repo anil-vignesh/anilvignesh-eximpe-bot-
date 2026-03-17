@@ -1,7 +1,7 @@
 import { db } from '@eximpe-bot/shared';
 import { embedText } from '../services/voyage';
 import { getClaudeClient } from '../services/claude';
-import type { Bot, ConversationLog } from '@eximpe-bot/shared';
+import type { Bot, ConversationLog, RetrievedChunk, RetrievedExperience } from '@eximpe-bot/shared';
 
 // ── Distil a Q&A into a compact experience entry via Claude ──────────────────
 
@@ -152,10 +152,10 @@ export async function logAndLearn(
       sender_ref:              msg.senderRef,
       question:                msg.text,
       answer:                  result.answer,
-      doc_chunks_used:         result.docChunksUsed.map((c) => ({
+      doc_chunks_used:         result.docChunksUsed.map((c: RetrievedChunk) => ({
         id: c.chunk.id, similarity: c.similarity,
       })),
-      experience_entries_used: result.experienceUsed.map((e) => ({
+      experience_entries_used: result.experienceUsed.map((e: RetrievedExperience) => ({
         id: e.entry.id, similarity: e.similarity,
       })),
       web_search_used:         result.webSearchUsed,

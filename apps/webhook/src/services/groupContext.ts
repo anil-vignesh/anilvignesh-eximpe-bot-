@@ -22,7 +22,7 @@ export async function getGroupContext(
   if (error || !data || data.length === 0) return '';
 
   // Reverse so oldest is first
-  const lines = data.reverse().flatMap((row) => [
+  const lines = data.reverse().flatMap((row: { sender_ref: string | null; question: string; answer: string }) => [
     `[${row.sender_ref ?? 'unknown'}]: ${row.question}`,
     `[Bot]: ${row.answer}`,
   ]);

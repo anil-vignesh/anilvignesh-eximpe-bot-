@@ -5,7 +5,7 @@
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:webhook": "pnpm --filter webhook dev",
-    "build": "pnpm --filter web build && pnpm --filter webhook build",
+    "build": "pnpm --filter @eximpe-bot/shared build && pnpm --filter webhook build",
     "db:migrate": "pnpm --filter @eximpe-bot/db migrate"
   },
   "devDependencies": {
