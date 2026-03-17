@@ -3,6 +3,7 @@ import express, { type Express } from 'express';
 import telegramRouter from './routes/telegram';
 import whatsappRouter from './routes/whatsapp';
 import botsRouter from './routes/bots';
+import adminRouter from './routes/admin';
 import { startIngestionWorker } from './queue/ingestion.worker';
 import { startCrawlWorker } from './queue/crawl.worker';
 
@@ -22,6 +23,7 @@ app.get('/health', (_req, res) => {
 app.use('/webhook/telegram', telegramRouter);
 app.use('/webhook/whatsapp', whatsappRouter);
 app.use('/api/bots', botsRouter);
+app.use('/api/admin', adminRouter);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
