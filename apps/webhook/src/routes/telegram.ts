@@ -52,6 +52,14 @@ router.post('/:botId', async (req: Request, res: Response) => {
         assignment?.api_version ?? null,
       );
 
+      // Log unrecognised chat if no assignment exists
+      if (!assignment) {
+        await db.from('unrecognised_chats').insert({
+          channel_type: 'telegram',
+          chat_id:      chatId,
+        });
+      }
+
       // Log the greeting
       await db.from('conversation_logs').insert({
         bot_id:       botId,
