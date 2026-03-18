@@ -175,6 +175,17 @@ export async function runPipeline(
   // ── Stage 2: Sufficiency check ────────────────────────────────────────────
 
   const bestDocScore = docChunks[0]?.similarity ?? 0;
+  console.log(
+    `[pipeline] Retrieved ${docChunks.length} doc chunks (best: ${bestDocScore.toFixed(3)}), ` +
+    `${expEntries.length} experience entries`
+  );
+  if (docChunks.length > 0) {
+    docChunks.forEach((c, i) => {
+      const src = [c.chunk.metadata?.doc_name, c.chunk.metadata?.section].filter(Boolean).join(' | ');
+      console.log(`  chunk[${i}] ${c.similarity.toFixed(3)} — ${src}`);
+    });
+  }
+
   const lowConfidence = bestDocScore < 0.5 && expEntries.length === 0;
   const useWebSearch  = lowConfidence && bot.web_search_fallback;
 
