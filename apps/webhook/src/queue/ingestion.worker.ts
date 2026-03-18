@@ -382,6 +382,11 @@ export function startIngestionWorker(): Worker {
     {
       connection:  getRedis(),
       concurrency: 1,
+      // Voyage AI free tier: 3 RPM. Cap at 2 jobs/min to stay safely under.
+      limiter: {
+        max:      2,
+        duration: 60_000,
+      },
     },
   );
 
