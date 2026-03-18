@@ -58,6 +58,9 @@ export async function parseTelegramUpdate(
   const msg = update.message;
   if (!msg || !msg.text) return null;
 
+  // Ignore messages from bots (prevents responding to our own confirmations, other bots, etc.)
+  if (msg.from?.is_bot) return null;
+
   const chat   = msg.chat;
   const chatId = String(chat.id);
   const isDm   = chat.type === 'private';

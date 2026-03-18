@@ -4,6 +4,35 @@ import { resolveBot } from '../pipeline/router';
 import { parseTelegramUpdate, sendTelegramMessage, sendTelegramGreeting } from '../adapters/telegram';
 import { runPipeline } from '../pipeline/index';
 import { logAndLearn } from '../pipeline/experienceWriter';
+import { getClaudeClient } from '../services/claude';
+
+// ── Intent classification ─────────────────────────────────────────────────────
+// Quick Haiku check — returns false for greetings, chit-chat, or messages
+// clearly unrelated to an API / technical integration question.
+
+async function classifyIntent(text: string): Promise<boolean> {
+  const claude = getClaudeClient();
+  const prompt =
+    `You are a classifier for an EximPe API support bot. ` +
+    `EximPe is a cross-border payment gateway. The bot answers questions about API integration — ` +
+    `payments, webhooks, authentication, UPI, mandates, refunds, settlements, errors, SDKs, etc.\n\n` +
+    `Is the following message a technical question or request that the bot should answer?\n` +
+    `Reply with exactly "yes" or "no".\n\n` +
+    `Message: ${text.slice(0, 300)}`;
+
+  try {
+    const response = await claude.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 5,
+      messages:   [{ role: 'user', content: prompt }],
+    });
+    const answer = response.content.find((b) => b.type === 'text');
+    return (answer?.type === 'text' ? answer.text.trim().toLowerCase() : 'no') === 'yes';
+  } catch {
+    // On error, allow the message through — better to answer than to silently drop
+    return true;
+  }
+}
 
 const router: Router = Router();
 
@@ -86,17 +115,24 @@ router.post('/:botId', async (req: Request, res: Response) => {
 
     const msg = parsed;
 
-    // 4. Run reasoning pipeline
+    // 4. Intent check — only respond to API-related questions
+    const isApiRelated = await classifyIntent(msg.text);
+    if (!isApiRelated) {
+      console.log(`[telegram] Skipping non-API message from ${msg.senderRef}: "${msg.text.slice(0, 80)}"`);
+      return;
+    }
+
+    // 5. Run reasoning pipeline
     const result = await runPipeline(msg);
 
-    // 5. Send reply
+    // 6. Send reply
     await sendTelegramMessage(config.tg_bot_token, {
       chatId:    msg.chatId,
       text:      result.answer,
       replyToId: msg.messageId,
     });
 
-    // 6. Log + async experience writer
+    // 7. Log + async experience writer
     await logAndLearn(msg, result, bot);
 
   } catch (err: unknown) {
