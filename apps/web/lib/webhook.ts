@@ -21,3 +21,14 @@ export async function triggerCrawl(knowledgeBaseId: string, versions: string[]) 
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+export async function triggerIngestion(documentId: string, knowledgeBaseId: string) {
+  const res = await fetch(`${WEBHOOK_URL}/api/admin/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentId, knowledgeBaseId }),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}

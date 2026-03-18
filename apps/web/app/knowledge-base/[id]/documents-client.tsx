@@ -1,18 +1,22 @@
 'use client'
 
-import React, { useState, useTransition } from 'react'
+import React, { useRef, useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetClose } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import { addUrlDocument, deleteDocument, triggerCrawlAction } from '@/actions/knowledge-base'
+import { addUrlDocument, addTextDocument, addFileDocument, deleteDocument, triggerCrawlAction, reindexKnowledgeBase } from '@/actions/knowledge-base'
 import type { Document } from '@/lib/types'
 import { toast } from 'sonner'
 import { PlusIcon, GlobeIcon, Trash2Icon, AlertCircleIcon, RefreshCwIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+type Tab = 'url' | 'text' | 'file'
 
 interface Props {
   kbId: string
@@ -26,13 +30,39 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  // Add URL form state
+  // Tab state
+  const [tab, setTab] = useState<Tab>('url')
+
+  // URL tab form state
   const [urlValue, setUrlValue] = useState('')
   const [nameValue, setNameValue] = useState('')
   const [apiVersionValue, setApiVersionValue] = useState('')
 
+  // Text tab form state
+  const [textName, setTextName] = useState('')
+  const [textApiVersion, setTextApiVersion] = useState('')
+  const [textContent, setTextContent] = useState('')
+
+  // File tab form state
+  const [fileName, setFileName] = useState('')
+  const [fileApiVersion, setFileApiVersion] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
   // Crawl form state
   const [versionsValue, setVersionsValue] = useState('')
+
+  function resetSheet() {
+    setTab('url')
+    setUrlValue('')
+    setNameValue('')
+    setApiVersionValue('')
+    setTextName('')
+    setTextApiVersion('')
+    setTextContent('')
+    setFileName('')
+    setFileApiVersion('')
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   function handleAddUrl(e: React.FormEvent) {
     e.preventDefault()
@@ -41,13 +71,64 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
     startTransition(async () => {
       try {
         await addUrlDocument(kbId, urlValue.trim(), nameValue.trim(), apiVersionValue.trim() || undefined)
-        toast.success('URL document added')
+        toast.success('URL document added and queued for indexing')
         setAddSheetOpen(false)
-        setUrlValue('')
-        setNameValue('')
-        setApiVersionValue('')
+        resetSheet()
       } catch (err: any) {
         toast.error(err.message ?? 'Failed to add document')
+      }
+    })
+  }
+
+  function handleAddText(e: React.FormEvent) {
+    e.preventDefault()
+    if (!textName.trim() || !textContent.trim()) return
+
+    startTransition(async () => {
+      try {
+        await addTextDocument(kbId, textName.trim(), textContent.trim(), textApiVersion.trim() || undefined)
+        toast.success('Text document added and queued for indexing')
+        setAddSheetOpen(false)
+        resetSheet()
+      } catch (err: any) {
+        toast.error(err.message ?? 'Failed to add document')
+      }
+    })
+  }
+
+  async function handleFileUpload(e: React.FormEvent) {
+    e.preventDefault()
+    if (!fileRef.current?.files?.[0]) return
+    const file = fileRef.current.files[0]
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    const allowed = ['pdf', 'docx', 'xlsx', 'csv', 'txt']
+    if (!allowed.includes(ext)) {
+      toast.error('Unsupported file type')
+      return
+    }
+
+    // Read as base64
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve((reader.result as string).split(',')[1])
+      reader.readAsDataURL(file)
+    })
+
+    startTransition(async () => {
+      try {
+        await addFileDocument(
+          kbId,
+          fileName.trim() || file.name,
+          file.name,
+          ext,
+          base64,
+          fileApiVersion.trim() || undefined,
+        )
+        toast.success('File uploaded and queued for indexing')
+        setAddSheetOpen(false)
+        resetSheet()
+      } catch (err: any) {
+        toast.error(err.message ?? 'Upload failed')
       }
     })
   }
@@ -89,11 +170,26 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
     })
   }
 
+  function handleReindex() {
+    startTransition(async () => {
+      try {
+        const result = await reindexKnowledgeBase(kbId)
+        toast.success(`Re-index queued for ${result.queued} document(s)`)
+      } catch (err: any) {
+        toast.error(err.message ?? 'Failed to trigger re-index')
+      }
+    })
+  }
+
   const fileTypeVariantMap: Record<string, 'blue' | 'purple' | 'gray'> = {
-    url: 'blue',
-    pdf: 'purple',
-    txt: 'gray',
-    md: 'gray',
+    url:  'blue',
+    pdf:  'purple',
+    docx: 'purple',
+    xlsx: 'purple',
+    csv:  'gray',
+    txt:  'gray',
+    text: 'gray',
+    md:   'gray',
   }
 
   return (
@@ -103,13 +199,17 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Documents</h2>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={handleReindex} disabled={isPending}>
+              <RefreshCwIcon />
+              Re-index All
+            </Button>
             <Button variant="outline" onClick={() => setCrawlDialogOpen(true)}>
               <RefreshCwIcon />
               Crawl docs.eximpe.com
             </Button>
             <Button onClick={() => setAddSheetOpen(true)}>
               <PlusIcon />
-              Add URL
+              Add Document
             </Button>
           </div>
         </div>
@@ -120,7 +220,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <GlobeIcon className="mb-3 size-8 text-muted-foreground" />
               <p className="text-sm font-medium">No documents yet</p>
-              <p className="mt-1 text-xs text-muted-foreground">Add a URL document to get started.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Add a document to get started.</p>
             </div>
           ) : (
             <Table>
@@ -195,52 +295,146 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
         </div>
       </div>
 
-      {/* Add URL Sheet */}
-      <Sheet open={addSheetOpen} onOpenChange={setAddSheetOpen}>
+      {/* Add Document Sheet */}
+      <Sheet open={addSheetOpen} onOpenChange={(open) => { setAddSheetOpen(open); if (!open) resetSheet() }}>
         <SheetHeader>
-          <SheetTitle>Add URL Document</SheetTitle>
+          <SheetTitle>Add Document</SheetTitle>
           <SheetClose onClose={() => setAddSheetOpen(false)} />
         </SheetHeader>
         <SheetContent>
-          <form id="add-url-form" onSubmit={handleAddUrl} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="doc-url">URL</Label>
-              <Input
-                id="doc-url"
-                type="url"
-                value={urlValue}
-                onChange={(e) => setUrlValue(e.target.value)}
-                placeholder="https://docs.eximpe.com/..."
-                required
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="doc-name">Name</Label>
-              <Input
-                id="doc-name"
-                value={nameValue}
-                onChange={(e) => setNameValue(e.target.value)}
-                placeholder="e.g. Getting Started"
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="doc-api-version">API Version (optional)</Label>
-              <Input
-                id="doc-api-version"
-                value={apiVersionValue}
-                onChange={(e) => setApiVersionValue(e.target.value)}
-                placeholder="e.g. v1"
-              />
-            </div>
-          </form>
+          {/* Tab switcher */}
+          <div className="flex gap-1 rounded-lg border border-border bg-muted/50 p-1 mb-4">
+            {(['url', 'text', 'file'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={cn(
+                  'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  tab === t
+                    ? 'bg-background shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {t === 'url' ? 'URL' : t === 'text' ? 'Paste Text' : 'Upload File'}
+              </button>
+            ))}
+          </div>
+
+          {/* URL Tab */}
+          {tab === 'url' && (
+            <form id="add-doc-form" onSubmit={handleAddUrl} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="doc-url">URL</Label>
+                <Input
+                  id="doc-url"
+                  type="url"
+                  value={urlValue}
+                  onChange={(e) => setUrlValue(e.target.value)}
+                  placeholder="https://docs.eximpe.com/..."
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="doc-name">Name</Label>
+                <Input
+                  id="doc-name"
+                  value={nameValue}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  placeholder="e.g. Getting Started"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="doc-api-version">API Version (optional)</Label>
+                <Input
+                  id="doc-api-version"
+                  value={apiVersionValue}
+                  onChange={(e) => setApiVersionValue(e.target.value)}
+                  placeholder="e.g. v1"
+                />
+              </div>
+            </form>
+          )}
+
+          {/* Paste Text Tab */}
+          {tab === 'text' && (
+            <form id="add-doc-form" onSubmit={handleAddText} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="text-name">Name</Label>
+                <Input
+                  id="text-name"
+                  value={textName}
+                  onChange={(e) => setTextName(e.target.value)}
+                  placeholder="e.g. Release Notes"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="text-api-version">API Version (optional)</Label>
+                <Input
+                  id="text-api-version"
+                  value={textApiVersion}
+                  onChange={(e) => setTextApiVersion(e.target.value)}
+                  placeholder="e.g. v1"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="text-content">Content</Label>
+                <Textarea
+                  id="text-content"
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  placeholder="Paste your markdown or plain text here…"
+                  className="min-h-[200px] font-mono text-sm"
+                  required
+                />
+              </div>
+            </form>
+          )}
+
+          {/* Upload File Tab */}
+          {tab === 'file' && (
+            <form id="add-doc-form" onSubmit={handleFileUpload} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="file-name">Name (optional)</Label>
+                <Input
+                  id="file-name"
+                  value={fileName}
+                  onChange={(e) => setFileName(e.target.value)}
+                  placeholder="Leave blank to use file name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="file-api-version">API Version (optional)</Label>
+                <Input
+                  id="file-api-version"
+                  value={fileApiVersion}
+                  onChange={(e) => setFileApiVersion(e.target.value)}
+                  placeholder="e.g. v1"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="file-input">File</Label>
+                <Input
+                  id="file-input"
+                  type="file"
+                  ref={fileRef}
+                  accept=".pdf,.docx,.xlsx,.csv,.txt"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">Supported: PDF, DOCX, XLSX, CSV, TXT</p>
+              </div>
+            </form>
+          )}
         </SheetContent>
         <SheetFooter>
           <Button variant="outline" onClick={() => setAddSheetOpen(false)}>
             Cancel
           </Button>
-          <Button type="submit" form="add-url-form" disabled={isPending}>
+          <Button type="submit" form="add-doc-form" disabled={isPending}>
             {isPending ? 'Adding…' : 'Add Document'}
           </Button>
         </SheetFooter>

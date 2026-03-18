@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { Worker, Job } from 'bullmq';
-import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import type { CheerioAPI } from 'cheerio';
 import { db } from '@eximpe-bot/shared';
 import { embedBatch } from '../services/voyage';
 import { getRedis } from './redis';
@@ -22,12 +22,119 @@ async function extractFromUrl(url: string): Promise<string> {
   });
   const $ = cheerio.load(html);
 
-  // Strip Mintlify chrome for docs.eximpe.com
+  // Strip nav/sidebar/footer/chrome
   $('nav, header, footer, .sidebar, .navbar, .toc, script, style, [aria-hidden="true"]').remove();
 
   // Extract main content — prefer <main> or <article>, fall back to <body>
-  const main = $('main').first().text() || $('article').first().text() || $('body').text();
-  return main.replace(/\s+/g, ' ').trim();
+  const root = $('main').first().length
+    ? $('main').first()
+    : $('article').first().length
+      ? $('article').first()
+      : $('body');
+
+  return htmlToMarkdown(root, $).trim();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function htmlToMarkdown(el: any, $: CheerioAPI): string {
+  let result = '';
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  el.contents().each((_i: number, node: any) => {
+    if (node.type === 'text') {
+      const text = (node as { data: string }).data ?? '';
+      result += text;
+      return;
+    }
+
+    if (node.type !== 'tag') return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tag = node as { name: string; children: any[] };
+    const tagName = tag.name.toLowerCase();
+    const $el = $(node);
+    const inner = htmlToMarkdown($el, $);
+
+    switch (tagName) {
+      case 'h1': result += `\n\n# ${inner.trim()}\n\n`; break;
+      case 'h2': result += `\n\n## ${inner.trim()}\n\n`; break;
+      case 'h3': result += `\n\n### ${inner.trim()}\n\n`; break;
+      case 'h4':
+      case 'h5':
+      case 'h6': result += `\n\n#### ${inner.trim()}\n\n`; break;
+      case 'p': result += `\n\n${inner.trim()}\n\n`; break;
+      case 'br': result += '\n'; break;
+      case 'strong':
+      case 'b': result += `**${inner.trim()}**`; break;
+      case 'em':
+      case 'i': result += `_${inner.trim()}_`; break;
+      case 'code':
+        // inline code (not inside pre)
+        result += `\`${inner}\``;
+        break;
+      case 'pre': {
+        // code block
+        const codeEl = $el.find('code');
+        const codeContent = codeEl.length ? codeEl.text() : $el.text();
+        const lang = (codeEl.attr('class') ?? '').replace(/language-/, '').trim();
+        result += `\n\n\`\`\`${lang}\n${codeContent}\n\`\`\`\n\n`;
+        break;
+      }
+      case 'ul':
+      case 'ol': {
+        $el.children('li').each((_i, li) => {
+          const liText = htmlToMarkdown($(li), $).trim().replace(/\n+/g, ' ');
+          result += `\n- ${liText}`;
+        });
+        result += '\n';
+        break;
+      }
+      case 'li': result += inner; break;
+      case 'table': result += '\n\n' + extractTable($(node), $) + '\n\n'; break;
+      case 'a': result += inner; break;
+      case 'div':
+      case 'section':
+      case 'article':
+      case 'main':
+      case 'span':
+      default:
+        result += inner;
+        break;
+    }
+  });
+
+  return result;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTable(el: any, $: CheerioAPI): string {
+  const rows: string[][] = [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  el.find('tr').each((_i: number, tr: any) => {
+    const cells: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    $(tr).find('th, td').each((_j: number, td: any) => {
+      cells.push($(td).text().trim().replace(/\|/g, '\\|'));
+    });
+    rows.push(cells);
+  });
+
+  if (rows.length === 0) return '';
+
+  const colCount = Math.max(...rows.map((r) => r.length));
+  const lines: string[] = [];
+
+  rows.forEach((row, idx) => {
+    // Pad row to colCount
+    while (row.length < colCount) row.push('');
+    lines.push('| ' + row.join(' | ') + ' |');
+    if (idx === 0) {
+      lines.push('| ' + Array(colCount).fill('---').join(' | ') + ' |');
+    }
+  });
+
+  return lines.join('\n');
 }
 
 async function extractFromPdf(buffer: Buffer): Promise<string> {
@@ -36,6 +143,21 @@ async function extractFromPdf(buffer: Buffer): Promise<string> {
   const pdfParse = pdfModule.default ?? pdfModule;
   const data = await pdfParse(buffer);
   return data.text as string;
+}
+
+async function extractFromDocx(buffer: Buffer): Promise<string> {
+  const m = await import('mammoth');
+  const r = await m.default.extractRawText({ buffer });
+  return r.value;
+}
+
+function extractFromXlsx(buffer: Buffer): string {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const XLSX = require('xlsx');
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  return (wb.SheetNames as string[])
+    .map((s: string) => '## ' + s + '\n' + XLSX.utils.sheet_to_csv(wb.Sheets[s]))
+    .join('\n\n');
 }
 
 function extractFromMarkdown(content: string): string {
@@ -56,6 +178,72 @@ function detectApiVersion(url: string): string | null {
   const match = url.match(/\/(v\d+)\//i);
   if (match) return match[1].replace('v', '');
   return null;
+}
+
+// ── Section-aware chunker ─────────────────────────────────────────────────────
+
+interface SectionChunk {
+  content: string;
+  sectionPath: string[];
+}
+
+function chunkBySection(markdown: string, maxChars: number): SectionChunk[] {
+  const results: SectionChunk[] = [];
+  const headingStack: string[] = [];
+  let sectionLines: string[] = [];
+
+  function flush() {
+    const text = sectionLines.join('\n').trim();
+    sectionLines = [];
+    if (!text) return;
+    if (text.length <= maxChars) {
+      results.push({ content: text, sectionPath: [...headingStack] });
+    } else {
+      for (const sub of splitLarge(text, maxChars)) {
+        results.push({ content: sub, sectionPath: [...headingStack] });
+      }
+    }
+  }
+
+  for (const line of markdown.split('\n')) {
+    const m = line.match(/^(#{1,4})\s+(.+)/);
+    if (m) {
+      flush();
+      const level = m[1].length;
+      headingStack.length = level;
+      headingStack[level - 1] = m[2].trim();
+      sectionLines.push(line);
+    } else {
+      sectionLines.push(line);
+    }
+  }
+  flush();
+  return results;
+}
+
+function splitLarge(text: string, maxChars: number): string[] {
+  const chunks: string[] = [];
+  let current = '';
+  let inCode = false;
+  for (const para of text.split(/\n\n+/)) {
+    const toggles = (para.match(/^```/gm) ?? []).length;
+    if (toggles % 2 === 1) inCode = !inCode;
+    if (!inCode && current.length > 0 && current.length + para.length + 2 > maxChars) {
+      chunks.push(current.trim());
+      current = para;
+    } else {
+      current = current ? current + '\n\n' + para : para;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.filter((c) => c.length > 0);
+}
+
+// ── Helper: extract nearest heading from chunk text ──────────────────────────
+
+function extractHeading(text: string): string | undefined {
+  const match = text.match(/^#{1,4}\s+(.+)/m);
+  return match ? match[1].trim() : undefined;
 }
 
 // ── Main worker handler ───────────────────────────────────────────────────────
@@ -103,32 +291,35 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
       if (fileErr || !fileData) throw new Error(`Could not download file: ${doc.file_url}`);
 
       const buffer = Buffer.from(await fileData.arrayBuffer());
+      const fileType = (doc.file_type as string ?? '').toLowerCase();
 
-      if (doc.file_type === 'pdf') {
+      if (fileType === 'pdf') {
         rawText = await extractFromPdf(buffer);
+      } else if (fileType === 'docx') {
+        rawText = await extractFromDocx(buffer);
+      } else if (fileType === 'xlsx' || fileType === 'xls') {
+        rawText = extractFromXlsx(buffer);
+      } else if (fileType === 'csv' || fileType === 'txt' || fileType === 'text') {
+        rawText = buffer.toString('utf-8');
       } else {
         rawText = buffer.toString('utf-8');
-        if (doc.file_type === 'json') rawText = extractFromJson(rawText);
+        if (fileType === 'json') rawText = extractFromJson(rawText);
       }
     }
 
     if (!rawText.trim()) throw new Error('No text content extracted from document');
 
-    // 3. Chunk
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize:    kb.chunk_size    ?? 512,
-      chunkOverlap: kb.chunk_overlap ?? 50,
-    });
-    const chunks = await splitter.createDocuments([rawText]);
+    // 3. Chunk by section
+    const chunks = chunkBySection(rawText, kb.chunk_size ?? 1200);
 
     // 4. Build metadata per chunk
-    const chunkTexts = chunks.map((c) => c.pageContent);
-    const metadataList: ChunkMetadata[] = chunks.map((c) => ({
-      doc_name:    doc.name,
-      section:     extractHeading(c.pageContent),
-      api_version: apiVersion,
-      source_url:  doc.source_url ?? undefined,
-      page:        c.metadata?.loc?.lines?.from ?? undefined,
+    const chunkTexts = chunks.map((c) => c.content);
+    const metadataList: ChunkMetadata[] = chunks.map((chunk) => ({
+      doc_name:     doc.name,
+      section_path: chunk.sectionPath,
+      section:      chunk.sectionPath.at(-1) ?? extractHeading(chunk.content),
+      api_version:  apiVersion,
+      source_url:   doc.source_url ?? undefined,
     }));
 
     // 5. Batch embed
@@ -157,9 +348,9 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
 
     // 8. Update document to indexed
     await db.from('documents').update({
-      status:      'indexed',
-      chunk_count: chunkTexts.length,
-      api_version: apiVersion,
+      status:        'indexed',
+      chunk_count:   chunkTexts.length,
+      api_version:   apiVersion,
       error_message: null,
     }).eq('id', documentId);
 
@@ -173,13 +364,6 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
     }).eq('id', documentId);
     throw err;
   }
-}
-
-// ── Helper: extract nearest heading from chunk text ──────────────────────────
-
-function extractHeading(text: string): string | undefined {
-  const match = text.match(/^#{1,4}\s+(.+)/m);
-  return match ? match[1].trim() : undefined;
 }
 
 // ── Worker bootstrap ──────────────────────────────────────────────────────────
