@@ -32,7 +32,14 @@ async function extractFromUrl(url: string): Promise<string> {
       ? $('article').first()
       : $('body');
 
-  return htmlToMarkdown(root, $).trim();
+  const markdown = htmlToMarkdown(root, $).trim();
+
+  // Strip Mintlify boilerplate: "Documentation Index > Fetch the complete documentation index at: ..."
+  // This header appears on every docs.eximpe.com page and adds noise to every chunk
+  return markdown
+    .replace(/>\s*##?\s*Documentation Index[\s\S]*?(?=\n#|\n\n#|$)/i, '')
+    .replace(/Fetch the complete documentation index at:.*?llms\.txt.*?\n/gi, '')
+    .trim();
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

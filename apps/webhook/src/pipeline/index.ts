@@ -78,7 +78,8 @@ function buildUserPrompt(
     for (const { chunk } of docChunks) {
       const meta = chunk.metadata;
       const source = [meta.doc_name, meta.section].filter(Boolean).join(' | Section: ');
-      parts.push(`---\n[Source: ${source}]\n${chunk.content}\n---`);
+      const url = meta.source_url ? `\nURL: ${meta.source_url}` : '';
+      parts.push(`---\n[Source: ${source}${url}]\n${chunk.content}\n---`);
     }
   }
 
