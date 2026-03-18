@@ -53,24 +53,7 @@ export async function getLog(id: string): Promise<
   const db = getDb()
   const { data, error } = await db
     .from('conversation_logs')
-    .select(
-      `
-      *,
-      bots(name),
-      doc_chunks_used:log_doc_chunks(
-        id,
-        source_name,
-        similarity_score,
-        chunk_text
-      ),
-      experience_entries_used:log_experience_entries(
-        id,
-        question_summary,
-        answer_summary,
-        similarity_score
-      )
-    `
-    )
+    .select('*, bots(name)')
     .eq('id', id)
     .single()
 
@@ -79,7 +62,9 @@ export async function getLog(id: string): Promise<
   return {
     ...data,
     bots: undefined,
-    bot_name: data.bots?.name ?? null,
+    bot_name: (data as any).bots?.name ?? null,
+    doc_chunks_used: data.doc_chunks_used ?? [],
+    experience_entries_used: data.experience_entries_used ?? [],
   }
 }
 
