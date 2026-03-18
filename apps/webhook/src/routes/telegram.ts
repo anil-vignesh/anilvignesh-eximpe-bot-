@@ -16,16 +16,27 @@ router.post('/:botId', async (req: Request, res: Response) => {
   try {
     // 1. Resolve bot — silently ignore if inactive or not found
     const resolved = await resolveBot(botId);
-    if (!resolved) return;
+    if (!resolved) {
+      console.log(`[telegram] resolveBot returned null for botId=${botId}`);
+      return;
+    }
 
     const { bot, config } = resolved;
-    if (!config.tg_bot_token) return;
+    if (!config.tg_bot_token) {
+      console.log(`[telegram] no tg_bot_token for botId=${botId}`);
+      return;
+    }
 
     const update = req.body;
+    console.log(`[telegram] update received for botId=${botId}:`, JSON.stringify(update).slice(0, 300));
 
     // 2. Parse update
     const parsed = await parseTelegramUpdate(botId, update);
-    if (!parsed) return;
+    if (!parsed) {
+      console.log(`[telegram] parseTelegramUpdate returned null for botId=${botId}`);
+      return;
+    }
+    console.log(`[telegram] parsed=${typeof parsed === 'string' ? parsed : 'message'} chatId=${typeof parsed === 'object' ? parsed.chatId : '?'}`);
 
     // 3. Handle greeting (bot added to group)
     if (parsed === 'greeting') {
