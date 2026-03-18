@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import React, { useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -137,8 +137,8 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
               </TableHeader>
               <TableBody>
                 {documents.map((doc) => (
-                  <>
-                    <TableRow key={doc.id}>
+                  <React.Fragment key={doc.id}>
+                    <TableRow>
                       <TableCell className="max-w-[240px]">
                         <div className="truncate font-medium text-sm">{doc.name}</div>
                         {doc.source_url && (
@@ -187,7 +187,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </TableBody>
             </Table>

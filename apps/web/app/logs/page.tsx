@@ -60,7 +60,6 @@ export default async function LogsPage({ searchParams }: Props) {
                   <TableRow
                     key={log.id}
                     className="cursor-pointer"
-                    onClick={() => {}}
                   >
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       <Link href={`/logs/${log.id}`} className="block hover:text-foreground transition-colors">
