@@ -130,17 +130,19 @@ export async function sendTelegramMessage(
       },
     });
   } catch (err: any) {
-    // If MarkdownV2 parsing fails, retry with plain text
-    if (err?.response?.data?.description?.includes('parse')) {
+    const tgError = err?.response?.data?.description ?? 'unknown';
+    console.error(`[sendTelegramMessage] Telegram error: ${tgError} | chat_id=${out.chatId} | replyToId=${out.replyToId}`);
+
+    // Retry with plain text — drop reply_parameters in case that's the issue
+    try {
       await axios.post(url, {
-        chat_id:   out.chatId,
-        text:      out.text,
-        reply_parameters: {
-          message_id: parseInt(out.replyToId, 10),
-        },
+        chat_id: out.chatId,
+        text:    out.text,
       });
-    } else {
-      throw err;
+    } catch (retryErr: any) {
+      const retryTgError = retryErr?.response?.data?.description ?? 'unknown';
+      console.error(`[sendTelegramMessage] Retry also failed: ${retryTgError} | chat_id=${out.chatId}`);
+      throw retryErr;
     }
   }
 }
