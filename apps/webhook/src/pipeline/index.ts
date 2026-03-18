@@ -102,6 +102,40 @@ function buildUserPrompt(
   return parts.join('\n\n');
 }
 
+// ── Query rewriter ────────────────────────────────────────────────────────────
+
+async function rewriteQuery(userQuery: string, claude: ReturnType<typeof getClaudeClient>): Promise<string> {
+  const prompt = `You are a search query rewriter for an EximPe API documentation system.
+EximPe is a cross-border payment aggregator. Their API covers: payments, subscriptions/mandates, webhooks, authentication, UPI, cards, net banking, settlements, refunds, and integration guides.
+
+Rewrite the user's question into a search query optimised for retrieving relevant API documentation.
+Expand abbreviations and map common terminology to EximPe-specific terms.
+
+Examples:
+- "upi autopay" → "UPI AutoPay subscription mandate recurring payment create-intent debit"
+- "how to charge customer later" → "EximPe subscription mandate debit payment schedule API"
+- "webhook setup" → "EximPe webhook configuration event notification endpoint secret"
+- "refund status" → "EximPe refund status check API endpoint"
+
+Reply with ONLY the rewritten query — no explanation, no markdown, no punctuation.
+
+User query: ${userQuery.slice(0, 400)}`;
+
+  try {
+    const response = await claude.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 80,
+      messages:   [{ role: 'user', content: prompt }],
+    });
+    const text = response.content.find((b) => b.type === 'text');
+    const rewritten = text?.type === 'text' ? text.text.trim() : '';
+    if (rewritten) console.log(`[pipeline] Query rewrite: "${userQuery}" → "${rewritten}"`);
+    return rewritten || userQuery;
+  } catch {
+    return userQuery; // Fall back to original on error
+  }
+}
+
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 export async function runPipeline(
@@ -118,11 +152,18 @@ export async function runPipeline(
 
   if (botErr || !bot) throw new Error(`Bot not found: ${msg.botId}`);
 
+  const claude = getClaudeClient();
+
+  // ── Stage 0: Query rewriting ──────────────────────────────────────────────
+  // Expands user terminology into EximPe-specific terms for better vector search
+
+  const searchQuery = await rewriteQuery(msg.text, claude);
+
   // ── Stage 1: Retrieval ────────────────────────────────────────────────────
 
   const [docChunks, expEntries] = await Promise.all([
-    retrieveDocs(msg.text, bot as Bot, msg.apiVersion),
-    retrieveExperience(msg.text, bot as Bot),
+    retrieveDocs(searchQuery, bot as Bot, msg.apiVersion),
+    retrieveExperience(searchQuery, bot as Bot),
   ]);
 
   const groupContext = await getGroupContext(
@@ -139,7 +180,6 @@ export async function runPipeline(
 
   // ── Stage 3: Claude call ──────────────────────────────────────────────────
 
-  const claude = getClaudeClient();
   const systemPrompt = bot.system_prompt || DEFAULT_SYSTEM_PROMPT;
   const model        = bot.llm_model || 'claude-haiku-4-5-20251001';
   const maxTokens    = bot.max_response_tokens || 1024;
