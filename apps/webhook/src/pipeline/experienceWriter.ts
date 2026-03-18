@@ -38,7 +38,8 @@ JSON format:
     const text = response.content.find((b) => b.type === 'text');
     if (!text || text.type !== 'text') return null;
 
-    return JSON.parse(text.text) as Distilled;
+    const raw = text.text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    return JSON.parse(raw) as Distilled;
   } catch (err) {
     console.error('[experienceWriter] distil error:', err);
     return null;
