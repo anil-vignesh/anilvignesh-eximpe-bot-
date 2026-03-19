@@ -1,6 +1,6 @@
 # EximPe Bot
 
-AI-powered API support assistant for EximPe developers. Answers questions about the EximPe payment API on Telegram (and planned WhatsApp), grounded in official documentation, past interactions, and web search.
+AI-powered API support assistant for EximPe developers. Answers questions about the EximPe payment API on Telegram (WhatsApp support in progress), grounded in official documentation, past interactions, and web search.
 
 ---
 
@@ -8,19 +8,20 @@ AI-powered API support assistant for EximPe developers. Answers questions about 
 
 Developers in EximPe Telegram groups @mention the bot with API questions. The bot:
 
-1. Rewrites the query to expand domain terminology
-2. Searches the knowledge base (embedded docs) for relevant chunks
-3. Searches the experience store (past Q&A) for similar resolved questions
-4. If confidence is low, triggers a web search via Tavily
-5. Calls Claude with all retrieved context and returns a grounded answer
-6. Logs the conversation and auto-distils it into the experience store for future use
+1. Classifies the intent — non-API messages get a polite deflection, not silence
+2. Rewrites the query to expand domain terminology
+3. Searches the knowledge base (embedded docs) for relevant chunks
+4. Searches the experience store (past Q&A) for similar resolved questions
+5. If confidence is low, triggers a web search via Tavily
+6. Calls Claude with all retrieved context and returns a grounded answer
+7. Logs the conversation and auto-distils it into the experience store for future use
 
 ---
 
 ## Architecture
 
 ```
-Telegram / WhatsApp
+Telegram (WhatsApp — in progress)
        │
        ▼
 apps/webhook  (Express.js)
@@ -38,6 +39,7 @@ apps/web  (Next.js admin dashboard)
   ├── experience-store/ Browse and curate Q&A entries
   ├── chat-assignments/ Map groups → bots + API versions
   ├── logs/            Conversation history
+  ├── costs/           Monthly cost tracker (Claude + Tavily + Voyage estimate)
   └── settings/        Global platform config
 
 packages/shared
@@ -108,6 +110,9 @@ TAVILY_API_KEY=tvly-...
 # Infrastructure
 REDIS_URL=redis://default:<password>@<host>:<port>
 WEBHOOK_BASE_URL=https://<public-url>   # Telegram needs a public HTTPS URL
+
+# Optional tuning
+VOYAGE_BATCH_DELAY_MS=21000            # ms between Voyage calls (default 21s for free tier)
 ```
 
 Create `apps/web/.env.local`:
@@ -120,12 +125,13 @@ WEBHOOK_URL=http://localhost:3001       # Points to local webhook server
 
 ### 3. Run database migrations
 
-```bash
-# Apply the schema to your Supabase project
-pnpm db:migrate
-```
+The migrations live in `packages/shared/src/db/migrations/`. Apply them in order via the Supabase SQL editor:
 
-The migrations live in `packages/shared/src/db/migrations/`. Apply them in order via the Supabase SQL editor or using the Supabase CLI.
+| File | What it does |
+|------|-------------|
+| `001_initial_schema.sql` | Full schema: all tables, indexes, FK constraints |
+| `002_vector_search_functions.sql` | `match_document_chunks()` and `match_experience_entries()` RPC functions |
+| `003_add_model_to_logs.sql` | Adds `model` column to `conversation_logs` for per-model cost tracking |
 
 ### 4. Start the servers
 
@@ -185,7 +191,8 @@ Every Telegram message goes through this sequence:
 ```
 Message received
   → parseTelegramUpdate()      Validate, extract chatId / text / apiVersion
-  → classifyIntent()           Haiku call — skip non-API messages silently
+                               Bot messages are ignored (is_bot filter)
+  → classifyIntent()           Haiku call — non-API messages get a deflection reply
   → rewriteQuery()             Haiku call — expand "upi autopay" → "UPI AutoPay mandate subscription debit"
   → retrieveDocs()             pgvector cosine search on document_chunks
   → retrieveExperience()       pgvector cosine search on experience_entries
@@ -193,7 +200,7 @@ Message received
   → lowConfidence check        If best doc score < 0.5 AND no experience → enable web search
   → Claude agentic loop        Max 3 rounds; executes web_search tool if needed
   → sendTelegramMessage()      MarkdownV2 format; falls back to plain text on Telegram error
-  → logAndLearn()              Saves conversation_log; async experience auto-distil
+  → logAndLearn()              Saves conversation_log (with model used); async experience auto-distil
 ```
 
 **Key tunables** (stored per knowledge base in `knowledge_bases` table, editable in dashboard):
@@ -228,6 +235,7 @@ Click **"Crawl docs.eximpe.com"** in the dashboard and enter the API versions to
 
 - **Re-index All** — Re-queues every indexed or errored document in the KB
 - **Per-document retry** — Click the refresh icon on any row with `error` or `pending` status
+- **Search and filter** — Documents table supports name search and status filter (All / Indexed / Error / Pending / Processing)
 
 ### Ingestion internals
 
@@ -239,7 +247,32 @@ extractFromUrl / extractFromPdf / extractFromDocx / extractFromXlsx
   → document_chunks.insert  Batches of 50 rows; stores content + embedding + metadata
 ```
 
-**Rate limits:** Voyage AI free tier is 3 RPM. The BullMQ worker is capped at 1 job/min. Failed jobs retry with exponential backoff (2 min → 4 min → 8 min → 16 min) plus random jitter so retries don't pile up.
+**Rate limits:** Voyage AI free tier is 3 RPM. The BullMQ worker is capped at 1 job/min. The in-process rate limiter (`_blockedUntilMs`) enforces a 21s gap between Voyage calls and backs off 60s after any 429. Failed jobs retry with exponential backoff (2 min → 4 min → 8 min → 16 min) plus random jitter so retries don't pile up. 404/410 URLs throw `UnrecoverableError` and never retry.
+
+---
+
+## Experience store
+
+The experience store is a curated Q&A knowledge base auto-built from past conversations.
+
+- **Auto-distil** — After each answered question, Haiku summarises the Q&A into a compact entry with tags and a quality score. Duplicates (cosine similarity > 0.92) are skipped.
+- **Tabs** — Filter entries by status: Active / Archived / Flagged
+- **Unarchive** — Archived entries can be restored to Active via the restore icon
+- **Edit** — Question summary, answer summary, and tags are editable
+- **Delete** — Permanently removes the entry (conversation log reference is nullified first)
+
+---
+
+## Cost tracker
+
+Go to `/costs` in the dashboard to see a monthly breakdown of API costs:
+
+- **Claude API** — Computed from `tokens_input` / `tokens_output` in conversation logs, using per-model pricing. The model used per conversation is now saved in the log.
+- **Tavily** — First 1,000 searches/month are free; $0.01 each after that. Counted from logged search queries.
+- **Voyage AI** — Estimated from total document chunk count × 300 tokens × $0.06/M. Use the Voyage dashboard link for exact figures.
+- **Month navigator** — Browse any past month.
+
+> Note: The intent classifier, query rewriter, and experience distil calls (all Haiku, ~100 tokens each) are not yet individually tracked. Actual Claude spend will be slightly higher than shown.
 
 ---
 
@@ -260,7 +293,8 @@ extractFromUrl / extractFromPdf / extractFromDocx / extractFromXlsx
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
 | `POST` | `/webhook/telegram/:botId` | Telegram webhook receiver |
-| `POST` | `/webhook/whatsapp/:botId` | WhatsApp webhook receiver |
+| `POST` | `/webhook/whatsapp/:botId` | WhatsApp webhook receiver (stub — in progress) |
+| `GET` | `/webhook/whatsapp/:botId` | WhatsApp webhook verification challenge |
 | `PATCH` | `/api/bots/:id/status` | Activate / deactivate bot (registers Telegram webhook) |
 | `POST` | `/api/admin/crawl` | Enqueue crawl job `{ knowledgeBaseId, versions[] }` |
 | `POST` | `/api/admin/ingest` | Enqueue ingestion job `{ documentId, knowledgeBaseId }` |
@@ -279,8 +313,9 @@ extractFromUrl / extractFromPdf / extractFromDocx / extractFromXlsx
 | `document_chunks` | Text chunks + 1024-dim embeddings (pgvector) |
 | `experience_stores` | Named Q&A collections |
 | `experience_entries` | Distilled Q&A — question/answer summaries, tags, embedding |
-| `conversation_logs` | Every message — question, answer, sources, tokens, latency |
+| `conversation_logs` | Every message — question, answer, sources, model, tokens, latency |
 | `settings` | Global platform config (API keys stored here as fallback) |
+| `unrecognised_chats` | Chats that messaged the bot with no assignment — surfaced in Chat Assignments |
 
 Vector search is done via RPC functions `match_document_chunks()` and `match_experience_entries()` defined in `packages/shared/src/db/migrations/002_vector_search_functions.sql`.
 
@@ -294,22 +329,27 @@ Look at the conversation log in `/logs` — it shows which chunks were used, sim
 **Bot not responding:**
 1. Check `/logs` for recent entries — if missing, the webhook isn't being called
 2. Check Railway logs for `[telegram] parseTelegramUpdate returned null` — bot may not be @mentioned
-3. Check `[telegram] Skipping non-API message` — intent classifier filtered it
+3. Check Railway logs for `[telegram] Non-API message` — intent classifier deflected it
 4. Verify `bot_chat_assignments` has an entry for the group's chatId
 
 **Documents stuck in `pending`:**
 - Check Railway logs for `[ingestion]` errors
 - `REDIS_URL` must be set for workers to start
-- Use the retry button in the dashboard or **Re-index All**
+- Use the per-document retry button or **Re-index All** in the dashboard
 
 **Voyage 429 errors:**
-- Free tier limit is 3 RPM. Jobs retry automatically with exponential backoff.
-- To resolve permanently, add a payment method at dashboard.voyageai.com — rate limits increase immediately.
+- The in-process rate limiter enforces a 60s cooldown after any 429 and a 21s gap between calls.
+- Jobs retry automatically with exponential backoff.
+- To increase rate limits permanently, add a payment method at dashboard.voyageai.com.
 
 **Bot responding to non-questions:**
 - The intent classifier (`classifyIntent()` in `routes/telegram.ts`) uses Haiku to filter
-- Check logs for `[telegram] Skipping non-API message` — confirm it's being caught
+- Non-API messages receive: *"I can only help with EximPe API integration questions…"*
 - If a message slips through, the system prompt instructs Claude to stay on-topic
+
+**Monitoring costs:**
+- Go to `/costs` in the dashboard for a monthly breakdown
+- External dashboards: [Anthropic](https://console.anthropic.com/settings/usage) · [Voyage AI](https://dashboard.voyageai.com) · [Tavily](https://app.tavily.com/home)
 
 ---
 

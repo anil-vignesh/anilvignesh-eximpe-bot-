@@ -1,8 +1,8 @@
 # EximPe Bot — Product Requirements & Technical Specification
 
-**Version:** 1.0
-**Date:** 2026-03-18
-**Status:** In Progress
+**Version:** 1.2
+**Date:** 2026-03-19
+**Status:** Active — WhatsApp integration next
 
 ---
 
@@ -17,16 +17,17 @@ EximPe is an RBI-licensed cross-border payment aggregator. International merchan
 An AI-powered support bot that:
 - Lives in the channels merchants already use (Telegram groups, WhatsApp groups)
 - Answers API integration questions in real time, with responses grounded in official documentation
+- Classifies incoming messages — non-API questions get a polite deflection, not silence
 - Gets smarter over time by retaining resolved Q&A pairs as an experience store
 - Falls back to live web search when documentation doesn't have the answer
-- Is fully configurable via a web dashboard (in progress)
+- Is fully configurable via a web dashboard
 
 ### 1.3 Core Principles
 
 - **Version-aware:** EximPe has multiple API versions in production. The bot always answers for the version the merchant is on.
 - **Grounded, not hallucinated:** Every answer is backed by docs, past experience, or web search — never fabricated.
 - **Self-improving:** High-quality Q&A pairs are automatically distilled into an experience store to improve future responses.
-- **Multi-channel:** Built for Telegram first, WhatsApp second.
+- **Multi-channel:** Telegram (live), WhatsApp (next).
 
 ---
 
@@ -36,7 +37,7 @@ An AI-powered support bot that:
 |------|---------|------|
 | PSP developer | Integrating EximPe API | Quick, accurate answers to API questions without waiting for support |
 | EximPe support team | Monitoring bot conversations | Visibility into what questions are being asked, review/curate experience entries |
-| EximPe admin | Managing the platform | Configure bots, upload docs, manage knowledge bases |
+| EximPe admin | Managing the platform | Configure bots, upload docs, manage knowledge bases, monitor costs |
 
 ---
 
@@ -47,7 +48,7 @@ An AI-powered support bot that:
 | Layer | Technology |
 |-------|-----------|
 | Webhook Server | Express.js + TypeScript, Node 20 |
-| Web Dashboard | Next.js (planned) |
+| Web Dashboard | Next.js 15, React 19, TailwindCSS 4, shadcn/ui |
 | Database | Supabase PostgreSQL + pgvector |
 | Message Queue | BullMQ + Redis |
 | LLM | Anthropic Claude (Haiku by default, configurable) |
@@ -62,7 +63,7 @@ An AI-powered support bot that:
 eximpe-bot/
 ├── apps/
 │   ├── webhook/          # Express server — handles messages, queues, API
-│   └── web/              # Next.js dashboard (planned)
+│   └── web/              # Next.js dashboard
 ├── packages/
 │   └── shared/           # DB client, TypeScript types, migrations
 ├── scripts/              # Admin utilities
@@ -77,28 +78,36 @@ Incoming message (Telegram / WhatsApp)
         │
         ▼
 [1] Parse & Normalise          Adapter converts channel payload → IncomingMessage
+                               Bot-originated messages filtered out (is_bot check)
         │
         ▼
 [2] Resolve Bot                Load bot record + channel config from DB
         │
         ▼
-[3] Retrieve (parallel)
+[3] Intent Classification      Haiku call — non-API messages get a deflection reply
+                               On error: allow through (fail open)
+        │
+        ▼
+[4] Query Rewrite              Haiku call — expand terminology for better vector search
+        │
+        ▼
+[5] Retrieve (parallel)
     ├─ Doc retrieval            Embed question → vector search doc_chunks (version-matched)
     └─ Experience retrieval     Embed question → vector search experience_entries
         │
         ▼
-[4] Confidence check           doc_score < 0.5 AND no experience → enable web search
+[6] Confidence check           doc_score < 0.5 AND no experience → enable web search
         │
         ▼
-[5] Claude (agentic loop)      System prompt + doc context + experience + group history
+[7] Claude (agentic loop)      System prompt + doc context + experience + group history
     └─ tool_use: web_search    → Tavily → append result → loop (max 3 rounds)
         │
         ▼
-[6] Send reply                 Adapter sends OutgoingMessage (MarkdownV2, fallback plain)
+[8] Send reply                 Adapter sends OutgoingMessage (MarkdownV2, fallback plain)
         │
         ▼
-[7] Log & Learn (async)
-    ├─ Save conversation_logs
+[9] Log & Learn (async)
+    ├─ Save conversation_logs  Includes model used, token counts, sources, latency
     └─ writeExperience          Distil Q&A → embed → dedup → insert experience_entry
 ```
 
@@ -117,9 +126,10 @@ Stores metadata for a collection of documents.
 | name | TEXT NOT NULL | | Display name |
 | description | TEXT | | |
 | embedding_model | TEXT | 'voyage-3' | Model used for embeddings |
-| chunk_size | INT | 512 | Characters per chunk |
+| chunk_size | INT | 1200 | Characters per chunk |
 | chunk_overlap | INT | 50 | Overlap between chunks |
-| top_k | INT | 5 | Max chunks returned per query |
+| top_k | INT | 8 | Max chunks returned per query |
+| doc_retrieval_threshold | FLOAT | 0.55 | Min cosine similarity for doc chunks |
 | created_at, updated_at | TIMESTAMPTZ | | |
 
 #### `documents`
@@ -130,7 +140,7 @@ Individual documents (URL, PDF, markdown, etc.) within a knowledge base.
 | id | UUID PK | |
 | knowledge_base_id | UUID FK → knowledge_bases | |
 | name | TEXT | Display name (e.g. "[v1] order / create") |
-| file_type | TEXT | 'pdf' \| 'md' \| 'txt' \| 'html' \| 'json' \| 'url' |
+| file_type | TEXT | 'pdf' \| 'docx' \| 'xlsx' \| 'csv' \| 'txt' \| 'md' \| 'json' \| 'url' |
 | file_url | TEXT | Supabase Storage URL |
 | source_url | TEXT | Original source URL |
 | raw_content | TEXT | Cached raw text |
@@ -248,6 +258,7 @@ Every message handled by the bot.
 | web_search_used | BOOLEAN | |
 | web_search_queries | TEXT[] | |
 | sources_used | TEXT[] | ['docs', 'experience', 'web', 'fallback'] |
+| model | TEXT | Claude model used (e.g. 'claude-haiku-4-5-20251001') |
 | tokens_input | INT | |
 | tokens_output | INT | |
 | latency_ms | INT | |
@@ -270,17 +281,18 @@ Global platform defaults (single-row config).
 #### `experience_store_access`
 Grants a bot read access to a shared experience store (many-to-many).
 
-| Column | Description |
-|--------|-------------|
-| bot_id | |
-| experience_store_id | |
-| access_type | 'read' (default) |
-| UNIQUE(bot_id, experience_store_id) | |
-
 #### `unrecognised_chats`
-Logs messages from chats not assigned to any bot. Auto-trimmed to last 20 records.
+Logs messages from chats not yet assigned to any bot. Surfaced in the Chat Assignments screen so admins can assign them quickly. Auto-cleaned when an assignment is created.
 
-### 4.2 Database Functions
+### 4.2 Database Migrations
+
+| File | Description |
+|------|-------------|
+| `001_initial_schema.sql` | Full schema: all tables, indexes, FK constraints |
+| `002_vector_search_functions.sql` | `match_document_chunks()` and `match_experience_entries()` RPC functions |
+| `003_add_model_to_logs.sql` | Adds `model` column to `conversation_logs` for per-model cost tracking |
+
+### 4.3 Database Functions
 
 **`match_document_chunks(kb_id, embedding, match_count, threshold, api_version)`**
 Version-aware cosine similarity search over document_chunks. Prioritises version-matched chunks; fills remaining slots with unversioned chunks. Returns content + metadata + similarity score.
@@ -292,11 +304,17 @@ Cosine similarity search over experience_entries across multiple stores. Filters
 
 ## 5. Feature Specifications
 
-### 5.1 Telegram Bot — DONE
+### 5.1 Telegram Bot — ✅ Done
 
 **Trigger modes:**
 - `mention` (default): Bot only responds when @mentioned in a group. Always responds in DMs.
 - `keyword`: Bot responds when message contains the configured trigger keyword.
+
+**Intent classification:**
+- Every message passes through a Haiku classifier before the pipeline.
+- Non-API messages (greetings, off-topic) receive: *"I can only help with EximPe API integration questions…"*
+- On classifier error: fail open (allow through).
+- Bot-originated messages (is_bot=true) are filtered at parse time.
 
 **Greeting:**
 - Bot sends a greeting message when added to a group.
@@ -304,9 +322,11 @@ Cosine similarity search over experience_entries across multiple stores. Filters
 - Controlled by `send_greeting` flag in bot_channel_configs.
 
 **Reply format:**
+- First-person voice ("we support…", "our API…") — never third-person references to EximPe.
 - Markdown formatting (code blocks, bold, etc.) using Telegram's MarkdownV2 spec.
-- Graceful fallback to plain text if parsing fails.
+- Graceful fallback to plain text if Telegram parsing fails.
 - Always replies to the original message (quoted reply).
+- No preamble or meta-commentary ("Based on our docs…" is forbidden).
 
 **Webhook:**
 - Registered via `POST /api/bots/:id/status` with `{ status: "active" }`.
@@ -317,49 +337,59 @@ Cosine similarity search over experience_entries across multiple stores. Filters
 - Last N conversation_logs entries for the chat are injected into the prompt.
 - `group_context_messages` is configurable per bot (default: 5).
 
-### 5.2 WhatsApp Bot — PLANNED (V2)
+### 5.2 WhatsApp Bot — 📋 Next
 
-Same pipeline as Telegram. Differences:
-- Meta Cloud API (not Telegram Bot API).
-- Verification handshake via GET /webhook/whatsapp/:botId.
-- Phone number masking for sender PII.
-- No @mention — keyword mode or all-messages mode.
+Same pipeline as Telegram. Adapter and route are stub placeholders.
 
-### 5.3 Knowledge Base & Document Ingestion — DONE (backend)
+Differences to implement:
+- Meta Cloud API (not Telegram Bot API)
+- GET webhook verification challenge (`hub.challenge` handshake)
+- Parse Meta's nested payload: `entry[].changes[].value.messages[]`
+- Filter status update callbacks (delivery/read receipts) — Meta POSTs these to the same endpoint
+- Send reply via `POST /{phone-number-id}/messages` with `type: "text"`
+- Mark message as read after processing
+- Phone number masking for sender PII
+
+No changes needed to the RAG pipeline, intent classifier, or logging.
+
+### 5.3 Knowledge Base & Document Ingestion — ✅ Done
 
 **Supported source types:**
 | Type | Ingestion method |
 |------|-----------------|
-| URL | HTTP fetch + Cheerio HTML stripping |
-| PDF | pdf-parse v2 |
+| URL | HTTP fetch + Cheerio HTML stripping → Markdown |
+| PDF | pdf-parse |
+| DOCX | mammoth |
+| XLSX / XLS | xlsx (sheet_to_csv) |
+| CSV / TXT | Raw text |
 | Markdown | Raw text |
-| JSON | JSON.stringify |
-| Plain text | Raw |
+| JSON | JSON.stringify with formatting |
 
 **Ingestion steps:**
 1. Fetch/extract raw text from source.
 2. Auto-detect API version from URL pattern (`/v1/`, `/v2/`, etc.).
-3. Chunk text using RecursiveCharacterTextSplitter (default: 512 chars, 50 overlap).
-4. Extract section heading per chunk for metadata.
-5. Batch-embed via Voyage AI (up to 128 texts per call).
+3. Strip Mintlify boilerplate from docs.eximpe.com pages.
+4. Chunk text by section headings (`chunkBySection`); oversized sections split by paragraph.
+5. Batch-embed via Voyage AI (128 texts per API call, 21s gap between calls).
 6. Delete existing chunks for the document (re-index support).
 7. Insert chunks in batches of 50.
 8. Update document status → 'indexed', record chunk_count.
 
+**Rate limit handling:**
+- In-process `_blockedUntilMs` guard: 21s minimum gap between Voyage calls.
+- After a 429: 60s cooldown (full Voyage rolling window).
+- BullMQ worker: 1 job/min limiter, concurrency 1.
+- Failed jobs: exponential backoff (2 min → 4 min → 8 min → 16 min) + up to 30s random jitter.
+- 404/410 URLs: throw `UnrecoverableError` — never retry.
+
 **Crawl worker:**
-Hardcoded list of 55 docs.eximpe.com pages (13 integration guide + 42 API reference). Discovers pages, creates document records, enqueues individual ingestion jobs. Supports multiple API versions in one crawl run.
+Discovers docs.eximpe.com pages for specified API versions, creates document records, enqueues individual ingestion jobs.
 
-**Chunking config** (per knowledge base):
-- `chunk_size`: default 512 chars
-- `chunk_overlap`: default 50 chars
-- `embedding_model`: default 'voyage-3'
-- `top_k`: default 5 chunks per retrieval
-
-### 5.4 Retrieval (RAG) — DONE
+### 5.4 Retrieval (RAG) — ✅ Done
 
 **Document retrieval:**
 1. Embed question via Voyage AI.
-2. Run `match_document_chunks` RPC with major-version filter (e.g. version='1' from api_version='1.0.0').
+2. Run `match_document_chunks` RPC with major-version filter.
 3. Fill remaining `top_k` slots with unversioned chunks.
 4. Min similarity threshold: `doc_retrieval_threshold` (default 0.60).
 
@@ -372,9 +402,9 @@ Hardcoded list of 55 docs.eximpe.com pages (13 integration guide + 42 API refere
 **Web search fallback:**
 - Triggers only when: doc_score < 0.5 AND no experience entries AND `web_search_fallback=true`.
 - Uses Tavily API (basic search depth, max 5 results).
-- Exposed to Claude as a `web_search` tool in the agentic loop.
+- Exposed to Claude as a `web_search` tool in the agentic loop (max 3 rounds).
 
-### 5.5 Experience Store — DONE (backend)
+### 5.5 Experience Store — ✅ Done
 
 **Auto-generation (async, post-response):**
 1. After every answered message, `writeExperience` runs asynchronously.
@@ -384,21 +414,49 @@ Hardcoded list of 55 docs.eximpe.com pages (13 integration guide + 42 API refere
 5. Insert experience_entry with source_log_id backlink.
 6. Update conversation_logs.experience_entry_id.
 
-**Manual entries:** Planned via dashboard UI.
+**Dashboard — curation:**
+- **Tabs:** Filter by status — Active / Archived / Flagged. Tab change forces full component remount (React `key` prop).
+- **Archive / Flag / Unarchive:** One-click status changes. Archived entries can be restored to Active.
+- **Edit:** Question summary, answer summary, and tags are editable inline.
+- **Delete:** Nullifies `conversation_logs.experience_entry_id` FK before deleting to avoid constraint violation.
 
-**Shared stores:** Multiple bots can read from a shared experience store. Access controlled via `experience_store_access` table.
-
-### 5.6 Conversation Logs — DONE (backend)
+### 5.6 Conversation Logs — ✅ Done
 
 Every handled message is logged with:
 - Full question and answer text
 - Which doc chunks and experience entries were used (with similarity scores)
 - Whether web search was used, and what queries
-- Token counts (input + output)
+- Claude model used (stored in `model` column — migration 003)
+- Token counts (input + output) — used for cost tracking
 - Latency in ms
 - Whether an experience entry was auto-generated
 
-### 5.7 Bot Management API — DONE (backend)
+### 5.7 Cost Tracker — ✅ Done
+
+`/costs` in the dashboard. Monthly breakdown:
+- **Claude API:** Exact cost from token counts in conversation_logs, using per-model pricing.
+- **Tavily:** Count of searches logged; first 1,000/month free, $0.01 each after.
+- **Voyage AI:** Estimated from total document chunk count × 300 tokens × $0.06/M.
+- **Month navigator:** Browse any past month.
+- **External links:** One-click to Anthropic / Voyage / Tavily dashboards.
+
+> Note: Intent classifier, query rewriter, and experience distil calls (all Haiku, ~100 tokens each) are not yet individually tracked. Actual Claude spend will be slightly higher.
+
+### 5.8 Web Dashboard — ✅ Done
+
+Next.js 15 admin dashboard deployed as a separate service.
+
+| Screen | Status | Notes |
+|--------|--------|-------|
+| Settings | ✅ | Global API keys, model defaults, experience toggles |
+| Bots | ✅ | Create/edit/activate bots, channel config |
+| Knowledge Base | ✅ | Upload docs (URL/file/paste), crawl, search/filter, per-doc retry, Re-index All |
+| Experience Store | ✅ | Tabs, archive/unarchive, edit, delete, quality score, use count |
+| Chat Assignments | ✅ | Map groups to bots + API versions; unrecognised chats surfaced for quick assignment |
+| Conversation Logs | ✅ | Full log with per-conversation detail view |
+| Costs | ✅ | Monthly cost breakdown with daily table and external links |
+
+### 5.9 Bot Management API — ✅ Done
 
 `PATCH /api/bots/:id/status`
 - Activates or deactivates a bot.
@@ -410,189 +468,84 @@ Every handled message is logged with:
 - Enqueues a crawl job for a given knowledge base + API versions.
 - Body: `{ knowledgeBaseId: string, versions: string[] }`.
 
----
-
-## 6. Web Dashboard — PLANNED
-
-### 6.1 Overview
-
-A Next.js admin dashboard deployed as a separate Railway service (or Vercel). The dashboard is the primary way to configure and monitor the bot platform without touching the database directly.
-
-### 6.2 Screens
-
-#### Screen 1: Settings
-Global platform configuration.
-- Anthropic API key
-- Voyage AI API key
-- Default LLM model selector
-- Experience auto-generation toggle
-- Experience dedup threshold slider
-- WhatsApp platform defaults (phone number ID, access token, verify token)
-
-#### Screen 2: Bots
-List and manage bot instances.
-
-**Bot list view:**
-- Name, channel, status badge (active/inactive/error), last activity
-
-**Create/Edit Bot:**
-- Name, description
-- Channel type (Telegram / WhatsApp)
-- Bot token (Telegram) or WA phone number ID
-- Knowledge base selector
-- Experience store selector
-- Trigger mode (mention / keyword) + keyword field
-- System prompt override
-- LLM model selector
-- Max response tokens
-- Doc retrieval threshold
-- Experience retrieval threshold
-- Group context message count
-- Web search fallback toggle
-- Greeting message + toggle
-- Activate / Deactivate toggle (calls PATCH /api/bots/:id/status)
-
-#### Screen 3: Knowledge Base
-Manage document collections.
-
-**KB list view:**
-- Name, document count, indexed count, last updated
-
-**KB detail view:**
-- KB settings (chunk size, overlap, top_k, embedding model)
-- Document table: name, type, version, status, chunk count, last indexed
-- Upload document (PDF, MD, TXT, JSON)
-- Add URL
-- Trigger re-index for document
-- Trigger full crawl (for docs.eximpe.com)
-- Delete document
-
-#### Screen 4: Experience Store
-Browse, curate, and manage Q&A experience entries.
-
-**Store list view:**
-- Name, entry count, shared toggle
-
-**Store detail view:**
-- Experience entry table: question summary, answer summary, tags, quality score, use count, status, source
-- Filter by: status, source type, tag, quality score range
-- Archive / flag / restore entry
-- Edit entry (manual correction)
-- Add manual entry
-
-#### Screen 5: Chat Assignments
-Map Telegram/WhatsApp groups to bots and API versions.
-
-**Assignment table:**
-- Channel type, chat ID, chat label, assigned bot, API version, assigned at
-
-**Add assignment:**
-- Channel type selector
-- Chat ID input
-- Chat label
-- Bot selector
-- API version input
-
-#### Screen 6: Conversation Logs
-View every message the bot has handled.
-
-**Log table:**
-- Timestamp, channel, chat, sender, question (truncated), answer (truncated), sources used, tokens, latency, experience generated
-
-**Log detail view:**
-- Full question + answer
-- Doc chunks used (with similarity scores, source doc link)
-- Experience entries used (with similarity scores)
-- Web search queries + results summary
-- Token counts + latency
-- Promote to experience (manual override)
-
-### 6.3 Auth
-
-Simple single-user auth (admin only) via NextAuth.js with credentials provider. No multi-tenant for now.
+`POST /api/admin/ingest`
+- Enqueues an ingestion job for a specific document.
+- Body: `{ documentId: string, knowledgeBaseId: string }`.
 
 ---
 
-## 7. Implementation Status
+## 6. Implementation Status
 
 ### Done ✅
 
-| Component | Status |
-|-----------|--------|
-| Monorepo structure (pnpm workspaces) | ✅ |
-| Shared package (types, DB client, migrations) | ✅ |
-| PostgreSQL schema with pgvector | ✅ |
-| Vector search RPC functions | ✅ |
-| Express webhook server | ✅ |
-| Telegram adapter (parse, send, greet) | ✅ |
-| Bot resolution & routing | ✅ |
-| RAG pipeline (docs + experience + web search) | ✅ |
-| Claude agentic loop with tool use | ✅ |
-| Voyage AI embeddings | ✅ |
-| Tavily web search fallback | ✅ |
-| Experience writer (auto-distil + dedup) | ✅ |
-| Conversation logging | ✅ |
-| Group context injection | ✅ |
-| Document ingestion worker (URL, PDF, MD, TXT, JSON) | ✅ |
-| Crawl worker (docs.eximpe.com, all 55 pages) | ✅ |
-| BullMQ job queues with retry/backoff | ✅ |
-| Bot status API (activate/deactivate + webhook reg) | ✅ |
-| Admin crawl trigger API | ✅ |
-| Railway deployment (Nixpacks, Node 20, pnpm) | ✅ |
-| Bot record in Supabase (Telegram, active) | ✅ |
-| Knowledge base + experience store linked to bot | ✅ |
-| Telegram webhook registered | ✅ |
+| Component | Notes |
+|-----------|-------|
+| Monorepo structure (pnpm workspaces) | |
+| Shared package (types, DB client, migrations) | |
+| PostgreSQL schema with pgvector | |
+| Vector search RPC functions | |
+| Express webhook server | |
+| Telegram adapter (parse, send, greet) | |
+| Bot resolution & routing | |
+| Intent classifier (Haiku, deflection reply) | Non-API messages get a polite response |
+| Query rewriter (Haiku) | |
+| RAG pipeline (docs + experience + web search) | |
+| Claude agentic loop with tool use | |
+| Voyage AI embeddings + rate limiter | `_blockedUntilMs` guard, 60s 429 cooldown |
+| Tavily web search fallback | |
+| Experience writer (auto-distil + dedup) | |
+| Conversation logging (with model column) | Migration 003 adds model field |
+| Group context injection | |
+| Document ingestion worker | URL, PDF, DOCX, XLSX, CSV, TXT, MD, JSON |
+| Crawl worker (docs.eximpe.com) | |
+| BullMQ queues + retry backoff + jitter | 404/410 → UnrecoverableError |
+| Bot status API (activate/deactivate + webhook reg) | |
+| Admin ingest/crawl trigger APIs | |
+| Railway deployment | Nixpacks, Node 20, pnpm |
+| Next.js dashboard (all screens) | Settings, Bots, KB, Experience Store, Logs, Chat Assignments, Costs |
+| Cost tracker | Claude + Tavily exact, Voyage estimated |
+| Unarchive in experience store | |
+| Per-document retry in KB dashboard | |
+| Unrecognised chats surfaced in Chat Assignments | |
 
-### In Progress 🔄
-
-| Component | Status |
-|-----------|--------|
-| docs.eximpe.com crawl + ingestion | 🔄 Triggered, running on Railway |
-
-### Planned 📋
+### Next 📋
 
 | Component | Priority | Notes |
 |-----------|----------|-------|
-| Next.js dashboard scaffold | High | `apps/web`, NextAuth, layout |
-| Settings screen | High | Global API keys, model defaults |
-| Bots screen | High | Create/edit/activate bots |
-| Knowledge Base screen | High | Upload docs, trigger crawl, view status |
-| Experience Store screen | Medium | Browse, curate, edit entries |
-| Chat Assignments screen | Medium | Map groups to bots + API versions |
-| Conversation Logs screen | Medium | View all conversations |
-| WhatsApp V2 adapter | Medium | Meta Cloud API |
-| WhatsApp bot_chat_assignment flow | Medium | Routing by group |
-| Shared experience stores UI | Low | Cross-bot experience sharing |
-| Bot chat assignment for Telegram test group | Immediate | Needed for end-to-end test |
+| WhatsApp adapter (Meta Cloud API) | High | Route stub + adapter stub exist; needs implementation |
+| WhatsApp webhook verification (GET challenge) | High | Part of WhatsApp work |
+| WhatsApp bot_chat_assignment flow | High | Same as Telegram once adapter is done |
+| Individual Haiku call cost tracking (classify/rewrite/distil) | Low | Currently not counted in cost tracker |
 
 ---
 
-## 8. Deployment
+## 7. Deployment
 
-### 8.1 Infrastructure
+### 7.1 Infrastructure
 
 | Service | Platform | Notes |
 |---------|----------|-------|
 | Webhook server | Railway | Auto-deploy on push to main |
 | Redis | Railway | Shared with webhook service |
-| Supabase | Supabase cloud | `kiavuufafagomyoydseh.supabase.co` |
-| Dashboard (planned) | Railway or Vercel | Separate service |
+| Supabase | Supabase cloud | |
+| Dashboard | Railway / Vercel | Separate service |
 
-### 8.2 Environment Variables
+### 7.2 Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | SUPABASE_URL | ✅ | Supabase project URL |
 | SUPABASE_SERVICE_ROLE_KEY | ✅ | Service role key (bypasses RLS) |
-| SUPABASE_ANON_KEY | ✅ | Anon key (for client-side use) |
+| SUPABASE_ANON_KEY | ✅ | Anon key |
 | ANTHROPIC_API_KEY | ✅ | Claude API key |
 | VOYAGE_API_KEY | ✅ | Embeddings |
 | TAVILY_API_KEY | ✅ | Web search |
 | REDIS_URL | ✅ | BullMQ job queue |
 | WEBHOOK_BASE_URL | ✅ | Public HTTPS URL for Telegram webhook |
 | NODE_ENV | ✅ | 'production' |
+| VOYAGE_BATCH_DELAY_MS | optional | Voyage inter-call delay in ms (default: 21000) |
 
-### 8.3 Build & Start
+### 7.3 Build & Start
 
 ```toml
 # nixpacks.toml
@@ -609,7 +562,7 @@ cmds = ["pnpm build"]  # builds shared first, then webhook
 cmd = "node apps/webhook/dist/index.js"
 ```
 
-### 8.4 Current Production Records
+### 7.4 Current Production Records
 
 | Resource | ID |
 |----------|----|
@@ -617,33 +570,22 @@ cmd = "node apps/webhook/dist/index.js"
 | Bot channel config | `45143eea-db3b-4ef2-b35b-21abddba7c0d` |
 | Knowledge base | `88b07b02-4e34-46ac-85f8-479e66fe7ace` |
 | Experience store | `4f8679cd-2df2-43b6-a471-e28786ac69ea` |
-| Railway URL | `https://eximpe-bot-webhook-production.up.railway.app` |
+| Railway webhook URL | `https://eximpe-bot-webhook-production.up.railway.app` |
 
 ---
 
-## 9. Immediate Next Steps
-
-1. **Verify crawl completed** — Check that all 55 docs.eximpe.com pages are ingested into the knowledge base. Confirm `documents` table shows status='indexed' for all rows.
-
-2. **Create a bot_chat_assignment** — The bot currently has no group assigned. Without an assignment, `api_version` defaults and the bot won't respond in groups. Assign the test Telegram group to the bot with `api_version: '1'`.
-
-3. **End-to-end test** — Send an API question in the test Telegram group, verify a grounded answer comes back.
-
-4. **Dashboard V1** — Scaffold Next.js `apps/web`, implement Settings + Bots screens as priority one so bot configuration no longer requires direct DB access.
-
-5. **WhatsApp V2** — Implement the WhatsApp adapter and test against Meta Cloud API sandbox.
-
----
-
-## 10. Known Constraints & Decisions
+## 8. Known Constraints & Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| Service role key for all DB access | Simplifies server-side access; no RLS complexity. Dashboard will use same key server-side. |
-| Voyage AI over OpenAI embeddings | voyage-3 has better retrieval quality for technical/code-heavy content |
+| Service role key for all DB access | Simplifies server-side access; no RLS complexity. |
+| Voyage AI over OpenAI embeddings | voyage-3 has better retrieval quality for technical/code-heavy content. |
 | Claude Haiku as default LLM | Cost efficiency for high-volume support queries. Opus/Sonnet available per-bot if needed. |
-| BullMQ + Railway Redis over serverless | Ingestion jobs are long-running (fetch + embed + insert). Serverless timeouts would break them. |
-| Nixpacks over Railpack | Railpack's npm fallback broke pnpm workspace installs. Nixpacks gives full control. |
+| BullMQ + Railway Redis over serverless | Ingestion jobs are long-running. Serverless timeouts would break them. |
+| Nixpacks over Railpack | Railpack's npm fallback broke pnpm workspace installs. |
 | Async experience writing | Writing experience entries adds ~2s latency. Running async keeps response times fast. |
 | Dedup threshold at 0.92 | High threshold prevents near-duplicate entries from polluting the experience store. |
-| No multi-tenancy in V1 | Single EximPe workspace. Multi-tenancy can be layered on later if needed. |
+| No multi-tenancy in V1 | Single EximPe workspace. Can be layered on later if needed. |
+| Intent classifier fails open | Better to answer a non-API question than to silently drop an API question due to a transient error. |
+| 60s Voyage 429 cooldown | Voyage's rate limit is a rolling 60s window. A 21s gap is not enough to recover after hitting the limit. |
+| UnrecoverableError for 404/410 | Dead URLs should not consume retry budget. Mark failed immediately and surface in dashboard. |
