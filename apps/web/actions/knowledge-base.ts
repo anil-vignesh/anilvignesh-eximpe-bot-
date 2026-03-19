@@ -168,7 +168,6 @@ export async function addFileDocument(
 
   // Upload file to Supabase Storage
   const buffer = Buffer.from(fileBase64, 'base64')
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? fileType
   const storagePath = `${kbId}/${doc.id}.${ext}`
 
   const { error: uploadError } = await db.storage
