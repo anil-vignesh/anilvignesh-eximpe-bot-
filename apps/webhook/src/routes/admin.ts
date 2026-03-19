@@ -4,9 +4,14 @@ import { enqueueIngestion } from '../queue/ingestion.queue';
 
 const router: Router = Router();
 
-function requireAdminSecret(req: Request, res: Response): boolean {
+export function requireAdminSecret(req: Request, res: Response): boolean {
   const secret = process.env.ADMIN_SECRET;
-  if (secret && req.headers['x-admin-secret'] !== secret) {
+  if (!secret) {
+    console.error('[admin] ADMIN_SECRET env var is not set — denying request to prevent open access');
+    res.status(503).json({ error: 'Admin endpoint not configured' });
+    return false;
+  }
+  if (req.headers['x-admin-secret'] !== secret) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
   }

@@ -40,26 +40,31 @@ export async function createAssignment(data: {
   chat_id: string
   chat_label?: string
   api_version: string
-}): Promise<void> {
+}): Promise<{ id: string; assigned_at: string }> {
   const db = getDb()
-  const { error } = await db.from('bot_chat_assignments').insert({
+  const { data: row, error } = await db.from('bot_chat_assignments').insert({
     bot_id: data.bot_id,
     channel_type: data.channel_type,
     chat_id: data.chat_id,
     chat_label: data.chat_label ?? null,
     api_version: data.api_version,
-  })
+  }).select('id, assigned_at').single()
 
   if (error) throw new Error(error.message)
 
   // Clean up from unrecognised_chats now that it's assigned
-  await db
+  const { error: cleanupError } = await db
     .from('unrecognised_chats')
     .delete()
     .eq('chat_id', data.chat_id)
     .eq('channel_type', data.channel_type)
 
+  if (cleanupError) {
+    console.error('[createAssignment] Failed to clean up unrecognised_chats:', cleanupError.message)
+  }
+
   revalidatePath('/chat-assignments')
+  return row
 }
 
 export async function updateAssignment(

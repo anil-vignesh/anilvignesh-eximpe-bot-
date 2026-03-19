@@ -366,11 +366,16 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
 
     // 7. Delete old chunks only after ALL new ones are successfully inserted.
     //    This keeps the previous good state intact if any insert above throws.
-    await db
-      .from('document_chunks')
-      .delete()
-      .eq('document_id', documentId)
-      .not('id', 'in', `(${newIds.join(',')})`);
+    if (newIds.length > 0) {
+      await db
+        .from('document_chunks')
+        .delete()
+        .eq('document_id', documentId)
+        .not('id', 'in', `(${newIds.join(',')})`);
+    } else {
+      // No new chunks produced — delete all old ones
+      await db.from('document_chunks').delete().eq('document_id', documentId);
+    }
 
     // 8. Update document to indexed
     await db.from('documents').update({

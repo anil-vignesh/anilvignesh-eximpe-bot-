@@ -91,13 +91,27 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
           )
           toast.success('Assignment updated')
         } else {
-          await createAssignment({
+          const created = await createAssignment({
             bot_id: form.bot_id,
             channel_type: form.channel_type,
             chat_id: form.chat_id,
             chat_label: form.chat_label || undefined,
             api_version: form.api_version,
           })
+          // Append new assignment to local state
+          setAssignments((prev) => [
+            {
+              id: created.id,
+              bot_id: form.bot_id,
+              channel_type: form.channel_type,
+              chat_id: form.chat_id,
+              chat_label: form.chat_label || null,
+              api_version: form.api_version,
+              assigned_at: created.assigned_at,
+              bot_name: bots.find((b) => b.id === form.bot_id)?.name ?? null,
+            },
+            ...prev,
+          ])
           // Remove from unrecognised chats list
           setUnrecognisedChats((prev) =>
             prev.filter((c) => !(c.chat_id === form.chat_id && c.channel_type === form.channel_type))
@@ -256,11 +270,10 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
 
       {/* Add / Edit Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetHeader>
-          <SheetTitle>{editingId ? 'Edit Assignment' : 'Add Assignment'}</SheetTitle>
-          <SheetClose onClose={() => setSheetOpen(false)} />
-        </SheetHeader>
         <SheetContent>
+          <SheetHeader>
+            <SheetTitle>{editingId ? 'Edit Assignment' : 'Add Assignment'}</SheetTitle>
+          </SheetHeader>
           <form id="assignment-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="assign-bot">Bot</Label>
@@ -326,15 +339,15 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
               </Select>
             </div>
           </form>
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setSheetOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="assignment-form" disabled={isPending}>
+              {isPending ? 'Saving…' : editingId ? 'Save Changes' : 'Add Assignment'}
+            </Button>
+          </SheetFooter>
         </SheetContent>
-        <SheetFooter>
-          <Button variant="outline" onClick={() => setSheetOpen(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" form="assignment-form" disabled={isPending}>
-            {isPending ? 'Saving…' : editingId ? 'Save Changes' : 'Add Assignment'}
-          </Button>
-        </SheetFooter>
       </Sheet>
 
       {/* Delete Confirm Dialog */}

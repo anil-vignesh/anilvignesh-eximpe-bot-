@@ -65,7 +65,36 @@ export async function listDocuments(kbId: string): Promise<Document[]> {
   return data ?? []
 }
 
+function assertSafeUrl(url: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('Invalid URL')
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only http and https URLs are allowed')
+  }
+  const host = parsed.hostname.toLowerCase()
+  // Block private/loopback ranges to prevent SSRF
+  if (
+    host === 'localhost' ||
+    host.endsWith('.local') ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+    host === '0.0.0.0' ||
+    host === '[::]' ||
+    host === '[::1]' ||
+    host === '169.254.169.254' // AWS metadata
+  ) {
+    throw new Error('URL points to a private or reserved address')
+  }
+}
+
 export async function addUrlDocument(kbId: string, url: string, name: string, apiVersion?: string): Promise<void> {
+  assertSafeUrl(url)
   const db = getDb()
   const { data: doc, error } = await db.from('documents').insert({
     knowledge_base_id: kbId,
@@ -141,7 +170,13 @@ export async function addFileDocument(
   }
 
   // Update with file_url and queue
-  await db.from('documents').update({ file_url: storagePath }).eq('id', doc.id)
+  const { error: updateError } = await db.from('documents').update({ file_url: storagePath }).eq('id', doc.id)
+  if (updateError) {
+    // Storage object is uploaded but DB update failed — clean up storage
+    await db.storage.from('documents').remove([storagePath])
+    await db.from('documents').delete().eq('id', doc.id)
+    throw new Error(`Failed to update document record: ${updateError.message}`)
+  }
   await triggerIngestion(doc.id, kbId)
   revalidatePath(`/knowledge-base/${kbId}`)
 }
@@ -175,6 +210,7 @@ export async function reindexKnowledgeBase(kbId: string): Promise<{ queued: numb
   if (error) throw new Error(error.message)
 
   const docs = data ?? []
+  if (docs.length === 0) return { queued: 0 }
 
   // Update all docs to pending in one query
   await db

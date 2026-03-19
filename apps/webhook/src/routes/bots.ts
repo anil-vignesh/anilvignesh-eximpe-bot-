@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '@eximpe-bot/shared';
 import { registerWebhook, deregisterWebhook } from '../services/telegramWebhook';
+import { requireAdminSecret } from './admin';
 
 const router: Router = Router();
 
@@ -12,6 +13,8 @@ const router: Router = Router();
  * Deactivating triggers deleteWebhook.
  */
 router.patch('/:id/status', async (req: Request, res: Response) => {
+  if (!requireAdminSecret(req, res)) return;
+
   const { id }     = req.params;
   const { status } = req.body as { status: string };
 

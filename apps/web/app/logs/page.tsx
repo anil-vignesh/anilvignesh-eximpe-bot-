@@ -91,8 +91,8 @@ export default async function LogsPage({ searchParams }: Props) {
                     <TableCell>
                       <Link href={`/logs/${log.id}`} className="block">
                         <div className="flex flex-wrap gap-1">
-                          {(log.sources_used ?? []).slice(0, 2).map((src, i) => (
-                            <Badge key={i} variant="gray" className="text-xs max-w-[80px] truncate">
+                          {(log.sources_used ?? []).slice(0, 2).map((src) => (
+                            <Badge key={src} variant="gray" className="text-xs max-w-[80px] truncate">
                               {src}
                             </Badge>
                           ))}

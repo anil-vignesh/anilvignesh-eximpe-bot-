@@ -75,7 +75,7 @@ router.post('/:botId', async (req: Request, res: Response) => {
       const chatId = String(
         update.my_chat_member?.chat?.id ?? update.message?.chat?.id,
       );
-      if (!chatId) return;
+      if (!chatId || chatId === 'undefined') return;
 
       // Get api_version from assignment if it exists
       const { data: assignment } = await db

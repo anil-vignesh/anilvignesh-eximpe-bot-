@@ -121,6 +121,7 @@ export function EntriesClient({ storeId, initialEntries, currentStatus }: Props)
         {STATUS_TABS.map((tab) => (
           <button
             key={tab}
+            type="button"
             onClick={() => navigateStatus(tab)}
             className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
               activeTab === tab

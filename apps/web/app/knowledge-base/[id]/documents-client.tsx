@@ -469,7 +469,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
 
           {/* URL Tab */}
           {tab === 'url' && (
-            <form id="add-doc-form" onSubmit={handleAddUrl} className="space-y-4">
+            <form id="add-url-form" onSubmit={handleAddUrl} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="doc-url">URL</Label>
                 <Input
@@ -506,7 +506,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
 
           {/* Paste Text Tab */}
           {tab === 'text' && (
-            <form id="add-doc-form" onSubmit={handleAddText} className="space-y-4">
+            <form id="add-text-form" onSubmit={handleAddText} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="text-name">Name</Label>
                 <Input
@@ -543,7 +543,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
 
           {/* Upload File Tab */}
           {tab === 'file' && (
-            <form id="add-doc-form" onSubmit={handleFileUpload} className="space-y-4">
+            <form id="add-file-form" onSubmit={handleFileUpload} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="file-name">Name (optional)</Label>
                 <Input
@@ -580,7 +580,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
             <Button variant="outline" onClick={() => setAddSheetOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" form="add-doc-form" disabled={isPending}>
+            <Button type="submit" form={tab === 'url' ? 'add-url-form' : tab === 'text' ? 'add-text-form' : 'add-file-form'} disabled={isPending}>
               {isPending ? 'Adding…' : 'Add Document'}
             </Button>
           </SheetFooter>
