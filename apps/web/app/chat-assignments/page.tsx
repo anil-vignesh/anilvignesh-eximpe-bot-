@@ -1,11 +1,12 @@
-import { listAssignments, listBots, listUnrecognisedChats } from '@/actions/chat-assignments'
+import { listAssignments, listBots, listUnrecognisedChats, listApiVersions } from '@/actions/chat-assignments'
 import { ChatAssignmentsClient } from './chat-assignments-client'
 
 export default async function ChatAssignmentsPage() {
-  const [assignments, bots, unrecognisedChats] = await Promise.all([
+  const [assignments, bots, unrecognisedChats, apiVersions] = await Promise.all([
     listAssignments(),
     listBots(),
     listUnrecognisedChats(),
+    listApiVersions(),
   ])
 
   return (
@@ -22,6 +23,7 @@ export default async function ChatAssignmentsPage() {
           initialAssignments={assignments}
           bots={bots}
           unrecognisedChats={unrecognisedChats}
+          apiVersions={apiVersions}
         />
       </div>
     </div>

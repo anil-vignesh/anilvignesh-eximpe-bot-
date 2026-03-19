@@ -22,6 +22,7 @@ interface Props {
   initialAssignments: Assignment[]
   bots: { id: string; name: string }[]
   unrecognisedChats: UnrecognisedChat[]
+  apiVersions: string[]
 }
 
 const emptyForm = {
@@ -32,8 +33,9 @@ const emptyForm = {
   api_version: '',
 }
 
-export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedChats }: Props) {
+export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedChats: initialUnrecognisedChats, apiVersions }: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments)
+  const [unrecognisedChats, setUnrecognisedChats] = useState<UnrecognisedChat[]>(initialUnrecognisedChats)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -96,6 +98,10 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
             chat_label: form.chat_label || undefined,
             api_version: form.api_version,
           })
+          // Remove from unrecognised chats list
+          setUnrecognisedChats((prev) =>
+            prev.filter((c) => !(c.chat_id === form.chat_id && c.channel_type === form.channel_type))
+          )
           toast.success('Assignment created')
         }
         setSheetOpen(false)
@@ -307,13 +313,17 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="assign-version">API Version</Label>
-              <Input
+              <Select
                 id="assign-version"
                 value={form.api_version}
                 onChange={(e) => updateForm('api_version', e.target.value)}
-                placeholder="v1"
                 required
-              />
+              >
+                <SelectItem value="">Select a version…</SelectItem>
+                {apiVersions.map((v) => (
+                  <SelectItem key={v} value={v}>{v}</SelectItem>
+                ))}
+              </Select>
             </div>
           </form>
         </SheetContent>

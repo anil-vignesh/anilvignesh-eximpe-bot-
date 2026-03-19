@@ -51,6 +51,14 @@ export async function createAssignment(data: {
   })
 
   if (error) throw new Error(error.message)
+
+  // Clean up from unrecognised_chats now that it's assigned
+  await db
+    .from('unrecognised_chats')
+    .delete()
+    .eq('chat_id', data.chat_id)
+    .eq('channel_type', data.channel_type)
+
   revalidatePath('/chat-assignments')
 }
 
@@ -74,6 +82,20 @@ export async function deleteAssignment(id: string): Promise<void> {
 
   if (error) throw new Error(error.message)
   revalidatePath('/chat-assignments')
+}
+
+export async function listApiVersions(): Promise<string[]> {
+  const db = getDb()
+  const { data, error } = await db
+    .from('documents')
+    .select('api_version')
+    .not('api_version', 'is', null)
+    .order('api_version', { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  const unique = [...new Set((data ?? []).map((r: any) => r.api_version as string))]
+  return unique
 }
 
 export async function listUnrecognisedChats(): Promise<
