@@ -3,13 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { DatabaseIcon, BookOpenIcon, MessagesSquareIcon, ScrollTextIcon } from 'lucide-react'
+import { DatabaseIcon, BookOpenIcon, MessagesSquareIcon, ScrollTextIcon, CircleDollarSignIcon } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/knowledge-base', label: 'Knowledge Bases', icon: DatabaseIcon },
   { href: '/experience-store', label: 'Experience Stores', icon: BookOpenIcon },
   { href: '/chat-assignments', label: 'Chat Assignments', icon: MessagesSquareIcon },
   { href: '/logs', label: 'Logs', icon: ScrollTextIcon },
+  { href: '/costs', label: 'Costs', icon: CircleDollarSignIcon },
 ]
 
 export function AdminNav() {

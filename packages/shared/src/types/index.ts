@@ -170,6 +170,7 @@ export interface ConversationLog {
   web_search_used:         boolean;
   web_search_queries:      string[] | null;
   sources_used:            string[] | null;
+  model:                   string | null;
   tokens_input:            number | null;
   tokens_output:           number | null;
   latency_ms:              number | null;
@@ -213,6 +214,7 @@ export interface PipelineResult {
   webSearchUsed:        boolean;
   webSearchQueries:     string[];
   sourcesUsed:          string[];
+  model:                string;
   tokensInput:          number;
   tokensOutput:         number;
   latencyMs:            number;

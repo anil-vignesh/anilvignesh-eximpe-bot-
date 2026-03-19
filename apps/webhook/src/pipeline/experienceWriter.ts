@@ -162,6 +162,7 @@ export async function logAndLearn(
       web_search_used:         result.webSearchUsed,
       web_search_queries:      result.webSearchQueries,
       sources_used:            result.sourcesUsed,
+      model:                   result.model,
       tokens_input:            result.tokensInput,
       tokens_output:           result.tokensOutput,
       latency_ms:              result.latencyMs,

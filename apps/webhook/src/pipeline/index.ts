@@ -291,6 +291,7 @@ export async function runPipeline(
     webSearchUsed:    webSearchResults.length > 0,
     webSearchQueries,
     sourcesUsed,
+    model,
     tokensInput:      totalInputTokens,
     tokensOutput:     totalOutputTokens,
     latencyMs:        Date.now() - startTime,
