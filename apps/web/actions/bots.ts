@@ -58,24 +58,37 @@ export type BotListItem = Bot & {
 
 export async function listBots(): Promise<BotListItem[]> {
   const db = getDb()
-  const { data, error } = await db
-    .from('bots')
-    .select(`
-      *,
-      config:bot_channel_configs(*),
-      knowledge_base:knowledge_bases(name),
-      experience_store:experience_stores(name)
-    `)
-    .order('created_at', { ascending: false })
+  const [botsRes, kbNamesRes] = await Promise.all([
+    db
+      .from('bots')
+      .select(`
+        *,
+        config:bot_channel_configs(*),
+        experience_store:experience_stores(name)
+      `)
+      .order('created_at', { ascending: false }),
+    db
+      .from('bot_knowledge_bases')
+      .select('bot_id, knowledge_bases(name)'),
+  ])
 
-  if (error) throw new Error(error.message)
+  if (botsRes.error) throw new Error(botsRes.error.message)
 
-  return (data ?? []).map((row: any) => ({
+  // Build a map of bot_id → comma-joined KB names
+  const kbNameMap: Record<string, string> = {}
+  for (const row of (kbNamesRes.data ?? []) as any[]) {
+    const name = row.knowledge_bases?.name
+    if (!name) continue
+    kbNameMap[row.bot_id] = kbNameMap[row.bot_id]
+      ? `${kbNameMap[row.bot_id]}, ${name}`
+      : name
+  }
+
+  return (botsRes.data ?? []).map((row: any) => ({
     ...row,
     config: Array.isArray(row.config) ? (row.config[0] ?? null) : (row.config ?? null),
-    kb_name: row.knowledge_base?.name ?? null,
+    kb_name: kbNameMap[row.id] ?? null,
     exp_name: row.experience_store?.name ?? null,
-    knowledge_base: undefined,
     experience_store: undefined,
   }))
 }
