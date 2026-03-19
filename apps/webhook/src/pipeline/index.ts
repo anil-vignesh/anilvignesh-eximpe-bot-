@@ -35,7 +35,7 @@ Rules:
 - Reference the X-API-Version header format when version is relevant (e.g. "set X-API-Version: 1.0.0").
 - Never preface answers with "Based on our API v1 documentation" or similar meta-commentary. Just answer directly.
 - If citing from experience context, you may say "Based on a similar question previously..."
-- If you use web search, briefly note what you found.
+- If you use web search, briefly note what you found. When answering using web search results, always apply Indian payments context: RBI regulations, NPCI rules, and Indian market norms take precedence over global practices. For example, RBI mandates Additional Factor of Authentication (AFA/3DS) for all card-not-present transactions in India — there are no amount-based exemptions unlike PSD2 in Europe. Flag explicitly when a general/global practice differs from the Indian regulatory requirement.
 - If you cannot find an answer from any source, say exactly:
   "I couldn't find a clear answer for this — please reach out to us directly."
 - Never ask the developer to share documentation — we own the docs.
@@ -171,8 +171,15 @@ export async function runPipeline(
 
   const queryEmbedding = await embedText(searchQuery);
 
+  // Load all KB IDs assigned to this bot via the join table
+  const { data: kbRows } = await db
+    .from('bot_knowledge_bases')
+    .select('knowledge_base_id')
+    .eq('bot_id', msg.botId);
+  const kbIds = (kbRows ?? []).map((r: any) => r.knowledge_base_id);
+
   const [docChunks, expEntries] = await Promise.all([
-    retrieveDocs(searchQuery, bot as Bot, msg.apiVersion, queryEmbedding),
+    retrieveDocs(searchQuery, bot as Bot, msg.apiVersion, queryEmbedding, kbIds),
     retrieveExperience(searchQuery, bot as Bot, queryEmbedding),
   ]);
 

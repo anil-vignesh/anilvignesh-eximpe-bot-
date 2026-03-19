@@ -17,6 +17,7 @@ interface BotFormProps {
   bot?: Bot
   config?: BotChannelConfig
   kbs: KnowledgeBase[]
+  assignedKbIds?: string[]
   stores: ExperienceStore[]
   isNew: boolean
 }
@@ -59,7 +60,7 @@ function PasswordInput({
   )
 }
 
-export function BotForm({ bot, config, kbs, stores, isNew }: BotFormProps) {
+export function BotForm({ bot, config, kbs, assignedKbIds, stores, isNew }: BotFormProps) {
   const router = useRouter()
   const [tab, setTab] = useState('general')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -73,6 +74,18 @@ export function BotForm({ bot, config, kbs, stores, isNew }: BotFormProps) {
   )
   const [webSearchFallback, setWebSearchFallback] = useState(bot?.web_search_fallback ?? false)
   const [sendGreeting, setSendGreeting] = useState(config?.send_greeting ?? false)
+  const [selectedKbIds, setSelectedKbIds] = useState<Set<string>>(
+    new Set(assignedKbIds ?? (bot?.knowledge_base_id ? [bot.knowledge_base_id] : []))
+  )
+
+  function toggleKb(kbId: string) {
+    setSelectedKbIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(kbId)) next.delete(kbId)
+      else next.add(kbId)
+      return next
+    })
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -84,7 +97,6 @@ export function BotForm({ bot, config, kbs, stores, isNew }: BotFormProps) {
       name: fd.get('name') as string,
       description: (fd.get('description') as string) || null,
       channel_type: channelType,
-      knowledge_base_id: (fd.get('knowledge_base_id') as string) || null,
       experience_store_id: (fd.get('experience_store_id') as string) || null,
       system_prompt: (fd.get('system_prompt') as string) || null,
       trigger_mode: triggerMode,
@@ -117,12 +129,14 @@ export function BotForm({ bot, config, kbs, stores, isNew }: BotFormProps) {
         : null
     }
 
+    const kbIds = Array.from(selectedKbIds)
+
     try {
       if (isNew) {
-        await createBot({ bot: botData, config: configData })
+        await createBot({ bot: botData, config: configData, kbIds })
         toast.success('Bot created successfully')
       } else {
-        await updateBot(bot!.id, { bot: botData, config: configData })
+        await updateBot(bot!.id, { bot: botData, config: configData, kbIds })
         toast.success('Bot updated successfully')
       }
       router.push('/bots')
@@ -195,19 +209,30 @@ export function BotForm({ bot, config, kbs, stores, isNew }: BotFormProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="knowledge_base_id">Knowledge Base</Label>
-                  <Select
-                    id="knowledge_base_id"
-                    name="knowledge_base_id"
-                    defaultValue={bot?.knowledge_base_id ?? ''}
-                  >
-                    <SelectItem value="">None</SelectItem>
-                    {kbs.map((kb) => (
-                      <SelectItem key={kb.id} value={kb.id}>
-                        {kb.name}
-                      </SelectItem>
-                    ))}
-                  </Select>
+                  <Label>Knowledge Bases</Label>
+                  {kbs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No knowledge bases found.</p>
+                  ) : (
+                    <div className="rounded-lg border border-input divide-y divide-border">
+                      {kbs.map((kb) => (
+                        <label
+                          key={kb.id}
+                          className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedKbIds.has(kb.id)}
+                            onChange={() => toggleKb(kb.id)}
+                            className="h-4 w-4 rounded border-input accent-primary"
+                          />
+                          <span className="text-sm">{kb.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {selectedKbIds.size === 0 && (
+                    <p className="text-xs text-muted-foreground">No knowledge base selected — bot will only use web search and experience store.</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="experience_store_id">Experience Store</Label>

@@ -39,7 +39,7 @@ export default async function BotPage({ params }: PageProps) {
   const result = await getBot(id)
   if (!result) notFound()
 
-  const { bot, config, kbs, stores } = result
+  const { bot, config, kbs, assignedKbIds, stores } = result
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -47,7 +47,7 @@ export default async function BotPage({ params }: PageProps) {
         <h1 className="text-2xl font-bold tracking-tight">{bot.name}</h1>
         <p className="mt-1 text-sm text-muted-foreground">Edit bot configuration.</p>
       </div>
-      <BotForm bot={bot} config={config ?? undefined} kbs={kbs} stores={stores} isNew={false} />
+      <BotForm bot={bot} config={config ?? undefined} kbs={kbs} assignedKbIds={assignedKbIds} stores={stores} isNew={false} />
     </div>
   )
 }

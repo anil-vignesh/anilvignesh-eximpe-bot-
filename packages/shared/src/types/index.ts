@@ -79,6 +79,14 @@ export interface BotChatAssignment {
   assigned_at:  string;
 }
 
+// ── Bot Knowledge Base (join) ─────────────────────────────────────────────────
+
+export interface BotKnowledgeBase {
+  bot_id:            string;
+  knowledge_base_id: string;
+  created_at:        string;
+}
+
 // ── Knowledge Base ────────────────────────────────────────────────────────────
 
 export interface KnowledgeBase {

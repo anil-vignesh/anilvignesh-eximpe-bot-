@@ -84,17 +84,19 @@ export async function getBot(id: string): Promise<{
   bot: Bot
   config: BotChannelConfig | null
   kbs: KnowledgeBase[]
+  assignedKbIds: string[]
   stores: ExperienceStore[]
 } | null> {
   const db = getDb()
 
-  const [botRes, kbRes, storeRes] = await Promise.all([
+  const [botRes, kbRes, assignedKbRes, storeRes] = await Promise.all([
     db
       .from('bots')
       .select('*, config:bot_channel_configs(*)')
       .eq('id', id)
       .single(),
     db.from('knowledge_bases').select('id, name').order('name'),
+    db.from('bot_knowledge_bases').select('knowledge_base_id').eq('bot_id', id),
     db.from('experience_stores').select('id, name').order('name'),
   ])
 
@@ -112,13 +114,37 @@ export async function getBot(id: string): Promise<{
     bot: { ...row, config: undefined } as Bot,
     config,
     kbs: (kbRes.data ?? []) as KnowledgeBase[],
+    assignedKbIds: (assignedKbRes.data ?? []).map((r: any) => r.knowledge_base_id),
     stores: (storeRes.data ?? []) as ExperienceStore[],
   }
+}
+
+export async function updateBotKnowledgeBases(botId: string, kbIds: string[]): Promise<void> {
+  const db = getDb()
+
+  // Delete all existing assignments then insert new ones
+  const { error: deleteError } = await db
+    .from('bot_knowledge_bases')
+    .delete()
+    .eq('bot_id', botId)
+
+  if (deleteError) throw new Error(deleteError.message)
+
+  if (kbIds.length > 0) {
+    const { error: insertError } = await db
+      .from('bot_knowledge_bases')
+      .insert(kbIds.map((kbId) => ({ bot_id: botId, knowledge_base_id: kbId })))
+
+    if (insertError) throw new Error(insertError.message)
+  }
+
+  revalidatePath(`/bots/${botId}`)
 }
 
 export async function createBot(data: {
   bot: Partial<Bot>
   config: Partial<BotChannelConfig>
+  kbIds?: string[]
 }): Promise<string> {
   const db = getDb()
 
@@ -138,13 +164,20 @@ export async function createBot(data: {
 
   if (configError) throw new Error(configError.message)
 
+  if (data.kbIds && data.kbIds.length > 0) {
+    const { error: kbError } = await db
+      .from('bot_knowledge_bases')
+      .insert(data.kbIds.map((kbId) => ({ bot_id: botId, knowledge_base_id: kbId })))
+    if (kbError) throw new Error(kbError.message)
+  }
+
   revalidatePath('/bots')
   return botId
 }
 
 export async function updateBot(
   id: string,
-  data: { bot: Partial<Bot>; config: Partial<BotChannelConfig> }
+  data: { bot: Partial<Bot>; config: Partial<BotChannelConfig>; kbIds?: string[] }
 ): Promise<void> {
   const db = getDb()
 
@@ -156,6 +189,10 @@ export async function updateBot(
     .update(data.config)
     .eq('bot_id', id)
   if (configError) throw new Error(configError.message)
+
+  if (data.kbIds !== undefined) {
+    await updateBotKnowledgeBases(id, data.kbIds)
+  }
 
   revalidatePath('/bots')
   revalidatePath(`/bots/${id}`)

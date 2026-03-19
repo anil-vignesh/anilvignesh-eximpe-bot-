@@ -103,7 +103,7 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
             {
               id: created.id,
               bot_id: form.bot_id,
-              channel_type: form.channel_type,
+              channel_type: form.channel_type as 'telegram' | 'whatsapp',
               chat_id: form.chat_id,
               chat_label: form.chat_label || null,
               api_version: form.api_version,

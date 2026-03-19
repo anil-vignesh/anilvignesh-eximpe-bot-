@@ -7,43 +7,60 @@ import type {
   ExperienceEntry,
 } from '@eximpe-bot/shared';
 
-// ── Doc retrieval — version-aware ─────────────────────────────────────────────
+// ── Doc retrieval — version-aware, multi-KB ───────────────────────────────────
 
 export async function retrieveDocs(
   question:        string,
   bot:             Bot,
   apiVersion:      string,
   queryEmbedding:  number[],
+  kbIds?:          string[],
 ): Promise<RetrievedChunk[]> {
-  if (!bot.knowledge_base_id) return [];
+  // Resolve KB IDs: prefer explicit list (from bot_knowledge_bases), fall back to legacy field
+  const ids = kbIds && kbIds.length > 0
+    ? kbIds
+    : bot.knowledge_base_id ? [bot.knowledge_base_id] : [];
 
-  const embedding = queryEmbedding;
-  const topK       = await getKbTopK(bot.knowledge_base_id);
-  const threshold  = bot.doc_retrieval_threshold;
+  if (ids.length === 0) return [];
+
+  const threshold    = bot.doc_retrieval_threshold;
   const majorVersion = apiVersion.split('.')[0]; // e.g. "1" from "1.0.0"
 
-  // Step 1: version-matched chunks
-  const versionMatched = await vectorSearch(
-    bot.knowledge_base_id,
-    embedding,
-    topK,
-    threshold,
-    majorVersion,
+  // Search all KBs in parallel, then merge and sort by similarity
+  const allResults = await Promise.all(
+    ids.map((kbId) => retrieveFromKb(kbId, queryEmbedding, threshold, majorVersion)),
   );
 
-  // Step 2: if fewer than topK results, fill remaining slots with unversioned chunks
-  const remaining = topK - versionMatched.length;
-  let unversioned: RetrievedChunk[] = [];
+  const merged = allResults.flat();
 
-  if (remaining > 0) {
-    unversioned = await vectorSearch(
-      bot.knowledge_base_id,
-      embedding,
-      remaining,
-      threshold,
-      null, // api_version IS NULL
-    );
-  }
+  // Deduplicate by chunk ID (shouldn't happen across KBs, but defensive)
+  const seen = new Set<string>();
+  const deduped = merged.filter(({ chunk }) => {
+    if (seen.has(chunk.id)) return false;
+    seen.add(chunk.id);
+    return true;
+  });
+
+  // Return sorted by similarity descending
+  return deduped.sort((a, b) => b.similarity - a.similarity);
+}
+
+async function retrieveFromKb(
+  kbId:          string,
+  embedding:     number[],
+  threshold:     number,
+  majorVersion:  string,
+): Promise<RetrievedChunk[]> {
+  const topK = await getKbTopK(kbId);
+
+  // Step 1: version-matched chunks
+  const versionMatched = await vectorSearch(kbId, embedding, topK, threshold, majorVersion);
+
+  // Step 2: fill remaining slots with unversioned chunks (regulatory docs have no api_version)
+  const remaining = topK - versionMatched.length;
+  const unversioned = remaining > 0
+    ? await vectorSearch(kbId, embedding, remaining, threshold, null)
+    : [];
 
   return [...versionMatched, ...unversioned];
 }
