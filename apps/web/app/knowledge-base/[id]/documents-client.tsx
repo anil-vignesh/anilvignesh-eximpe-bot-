@@ -171,9 +171,11 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
     }
 
     // Read as base64
-    const base64 = await new Promise<string>((resolve) => {
+    const base64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve((reader.result as string).split(',')[1])
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.onabort = () => reject(new Error('File read aborted'))
       reader.readAsDataURL(file)
     })
 

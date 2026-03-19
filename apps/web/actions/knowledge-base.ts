@@ -111,12 +111,17 @@ export async function addUrlDocument(kbId: string, url: string, name: string, ap
   revalidatePath(`/knowledge-base/${kbId}`)
 }
 
+const MAX_TEXT_CONTENT_BYTES = 10 * 1024 * 1024 // 10 MB
+
 export async function addTextDocument(
   kbId: string,
   name: string,
   content: string,
   apiVersion?: string
 ): Promise<void> {
+  if (Buffer.byteLength(content, 'utf8') > MAX_TEXT_CONTENT_BYTES) {
+    throw new Error('Content exceeds maximum size of 10 MB')
+  }
   const db = getDb()
   const { data: doc, error } = await db.from('documents').insert({
     knowledge_base_id: kbId,
@@ -133,6 +138,8 @@ export async function addTextDocument(
   revalidatePath(`/knowledge-base/${kbId}`)
 }
 
+const ALLOWED_FILE_EXTENSIONS = new Set(['pdf', 'docx', 'xlsx', 'csv', 'txt', 'text'])
+
 export async function addFileDocument(
   kbId: string,
   name: string,
@@ -141,6 +148,10 @@ export async function addFileDocument(
   fileBase64: string,
   apiVersion?: string
 ): Promise<void> {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? fileType
+  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
+    throw new Error(`File type .${ext} is not supported`)
+  }
   const db = getDb()
 
   // Insert document record

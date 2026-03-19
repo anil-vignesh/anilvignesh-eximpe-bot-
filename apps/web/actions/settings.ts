@@ -32,7 +32,9 @@ export async function updateSettings(data: Partial<Settings>): Promise<void> {
   if (!settings) {
     throw new Error('Settings row not found')
   }
-  const { error } = await db.from('settings').update(data).eq('id', settings.id)
+  // Exclude `id` — primary key must not be updatable
+  const { id: _id, ...updateData } = data
+  const { error } = await db.from('settings').update(updateData).eq('id', settings.id)
   if (error) throw new Error(error.message)
   revalidatePath('/settings')
 }

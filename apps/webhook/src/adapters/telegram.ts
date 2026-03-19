@@ -66,12 +66,15 @@ export async function parseTelegramUpdate(
   const isDm   = chat.type === 'private';
 
   // Load channel config to get bot username for mention detection
-  const { data: config } = await db
+  const { data: config, error: configError } = await db
     .from('bot_channel_configs')
     .select('tg_bot_username')
     .eq('bot_id', botId)
     .single();
 
+  if (configError) {
+    console.warn(`[parseTelegramUpdate] Failed to load bot_channel_configs for bot ${botId}: ${configError.message}`);
+  }
   const botUsername = config?.tg_bot_username ?? '';
 
   // In groups: require @mention
@@ -184,8 +187,10 @@ export async function sendTelegramGreeting(
       text,
       parse_mode: 'MarkdownV2',
     });
-  } catch {
+  } catch (err: unknown) {
     // Best-effort — don't fail if greeting doesn't send
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn(`[sendTelegramGreeting] Failed to send greeting to ${chatId}: ${msg}`)
   }
 }
 
