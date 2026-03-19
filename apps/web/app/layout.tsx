@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: '/experience-store', label: 'Experience Store' },
   { href: '/chat-assignments', label: 'Chat Assignments' },
   { href: '/logs', label: 'Logs' },
+  { href: '/costs', label: 'Costs' },
 ]
 
 export default function RootLayout({
