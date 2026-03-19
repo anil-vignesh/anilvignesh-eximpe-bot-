@@ -39,7 +39,18 @@ JSON format:
     if (!text || text.type !== 'text') return null;
 
     const raw = text.text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-    return JSON.parse(raw) as Distilled;
+    const parsed = JSON.parse(raw);
+    // Validate required fields
+    if (
+      typeof parsed.question_summary !== 'string' ||
+      typeof parsed.answer_summary !== 'string' ||
+      !Array.isArray(parsed.tags) ||
+      typeof parsed.quality_score !== 'number'
+    ) {
+      console.error('[experienceWriter] distil returned unexpected shape:', raw.slice(0, 200));
+      return null;
+    }
+    return parsed as Distilled;
   } catch (err) {
     console.error('[experienceWriter] distil error:', err);
     return null;
@@ -72,11 +83,15 @@ export async function writeExperience(
   // Skip if no experience store or auto-generation is globally off
   if (!bot.experience_store_id) return;
 
-  const { data: settings } = await db
+  const { data: settings, error: settingsErr } = await db
     .from('settings')
     .select('experience_auto_generation, experience_dedup_threshold')
     .single();
 
+  if (settingsErr) {
+    console.error('[experienceWriter] Failed to load settings:', settingsErr.message);
+    return;
+  }
   if (!settings?.experience_auto_generation) return;
 
   const dedupThreshold = settings.experience_dedup_threshold ?? 0.92;

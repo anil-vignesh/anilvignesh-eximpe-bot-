@@ -22,12 +22,12 @@ let _blockedUntilMs = 0;
 async function waitForRateLimit(): Promise<void> {
   const now  = Date.now();
   const wait = _blockedUntilMs - now;
+  // Reserve the slot before sleeping so concurrent callers see it immediately
+  _blockedUntilMs = Date.now() + MIN_CALL_INTERVAL_MS;
   if (wait > 0) {
     console.log(`[voyage] rate-limit guard — waiting ${wait}ms`);
     await sleep(wait);
   }
-  // Reserve the next slot 21 s from now
-  _blockedUntilMs = Date.now() + MIN_CALL_INTERVAL_MS;
 }
 
 async function embedWithRetry(
@@ -42,10 +42,12 @@ async function embedWithRetry(
     const msg = err instanceof Error ? err.message : String(err);
     const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit');
     if (is429) {
-      // Back off for a full 60 s window — Voyage's quota resets over 60 s,
-      // so 21 s is not enough after hitting the limit
       _blockedUntilMs = Date.now() + 60_000;
-      throw err;
+      console.log('[voyage] 429 received — waiting 60s before retry');
+      await sleep(60_000);
+      // One retry after the cooldown
+      const result = await client.embed({ input, model: 'voyage-3' });
+      return result.data!.map((d) => d.embedding as number[]);
     }
     throw err;
   }

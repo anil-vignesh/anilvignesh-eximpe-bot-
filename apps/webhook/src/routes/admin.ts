@@ -4,12 +4,22 @@ import { enqueueIngestion } from '../queue/ingestion.queue';
 
 const router: Router = Router();
 
+function requireAdminSecret(req: Request, res: Response): boolean {
+  const secret = process.env.ADMIN_SECRET;
+  if (secret && req.headers['x-admin-secret'] !== secret) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
 /**
  * POST /api/admin/crawl
  * Body: { knowledgeBaseId: string, versions: string[] }
  * Enqueues a crawl job for the given KB and versions.
  */
 router.post('/crawl', async (req: Request, res: Response) => {
+  if (!requireAdminSecret(req, res)) return;
   const { knowledgeBaseId, versions } = req.body as {
     knowledgeBaseId: string;
     versions: string[];
@@ -25,6 +35,7 @@ router.post('/crawl', async (req: Request, res: Response) => {
 });
 
 router.post('/ingest', async (req: Request, res: Response) => {
+  if (!requireAdminSecret(req, res)) return;
   const { documentId, knowledgeBaseId } = req.body as { documentId: string; knowledgeBaseId: string };
   if (!documentId || !knowledgeBaseId) {
     res.status(400).json({ error: 'documentId and knowledgeBaseId are required' });

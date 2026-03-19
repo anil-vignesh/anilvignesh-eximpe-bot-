@@ -250,11 +250,11 @@ export function EntriesClient({ storeId, initialEntries, currentStatus }: Props)
 
       {/* Edit Sheet */}
       <Sheet open={editEntry !== null} onOpenChange={(open) => !open && setEditEntry(null)}>
-        <SheetHeader>
-          <SheetTitle>Edit Entry</SheetTitle>
-          <SheetClose onClose={() => setEditEntry(null)} />
-        </SheetHeader>
         <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Edit Entry</SheetTitle>
+            <SheetClose onClose={() => setEditEntry(null)} />
+          </SheetHeader>
           <form id="edit-entry-form" onSubmit={handleSaveEdit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="edit-question">Question Summary</Label>
@@ -286,15 +286,15 @@ export function EntriesClient({ storeId, initialEntries, currentStatus }: Props)
               />
             </div>
           </form>
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setEditEntry(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="edit-entry-form" disabled={isPending}>
+              {isPending ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </SheetFooter>
         </SheetContent>
-        <SheetFooter>
-          <Button variant="outline" onClick={() => setEditEntry(null)}>
-            Cancel
-          </Button>
-          <Button type="submit" form="edit-entry-form" disabled={isPending}>
-            {isPending ? 'Saving…' : 'Save Changes'}
-          </Button>
-        </SheetFooter>
       </Sheet>
 
       {/* Delete Confirm Dialog */}

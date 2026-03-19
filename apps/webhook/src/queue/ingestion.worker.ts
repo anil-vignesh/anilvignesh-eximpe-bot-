@@ -342,10 +342,7 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
     // 5. Batch embed
     const embeddings = await embedBatch(chunkTexts);
 
-    // 6. Delete existing chunks for this document (re-index)
-    await db.from('document_chunks').delete().eq('document_id', documentId);
-
-    // 7. Upsert chunks
+    // 6. Insert new chunks FIRST — collect their IDs so we can delete only the old ones
     const rows = chunkTexts.map((content, i) => ({
       document_id:       documentId,
       knowledge_base_id: knowledgeBaseId,
@@ -354,14 +351,26 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
       embedding:         JSON.stringify(embeddings[i]),
     }));
 
+    const newIds: string[] = [];
+
     // Insert in batches of 50 to avoid payload limits
     const BATCH = 50;
     for (let i = 0; i < rows.length; i += BATCH) {
-      const { error } = await db
+      const { data, error } = await db
         .from('document_chunks')
-        .insert(rows.slice(i, i + BATCH));
+        .insert(rows.slice(i, i + BATCH))
+        .select('id');
       if (error) throw new Error(`Chunk insert failed: ${error.message}`);
+      if (data) newIds.push(...data.map((r: { id: string }) => r.id));
     }
+
+    // 7. Delete old chunks only after ALL new ones are successfully inserted.
+    //    This keeps the previous good state intact if any insert above throws.
+    await db
+      .from('document_chunks')
+      .delete()
+      .eq('document_id', documentId)
+      .not('id', 'in', `(${newIds.join(',')})`);
 
     // 8. Update document to indexed
     await db.from('documents').update({

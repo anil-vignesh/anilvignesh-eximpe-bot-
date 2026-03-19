@@ -32,7 +32,33 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     return;
   }
 
-  // Update status
+  // Telegram webhook registration — attempt BEFORE updating DB to keep state consistent
+  if (bot.channel_type === 'telegram') {
+    if (status === 'active') {
+      try {
+        await registerWebhook(id);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        // Webhook registration failed — mark bot as error so DB reflects reality
+        await db.from('bots').update({ status: 'error' }).eq('id', id);
+        res.status(502).json({
+          status: 'error',
+          webhook_registered: false,
+          webhook_error: message,
+        });
+        return;
+      }
+    } else {
+      // Best-effort deregistration — proceed even if it fails
+      try {
+        await deregisterWebhook(id);
+      } catch {
+        // Ignore — webhook may already be gone
+      }
+    }
+  }
+
+  // Update DB status only after webhook operation succeeded (or was skipped)
   const { error: updateErr } = await db
     .from('bots')
     .update({ status })
@@ -43,25 +69,8 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     return;
   }
 
-  // Telegram webhook registration
   if (bot.channel_type === 'telegram') {
-    try {
-      if (status === 'active') {
-        await registerWebhook(id);
-        res.json({ status, webhook_registered: true });
-      } else {
-        await deregisterWebhook(id);
-        res.json({ status, webhook_registered: false });
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      // Status was updated but webhook registration failed — return partial success
-      res.status(207).json({
-        status,
-        webhook_registered: false,
-        webhook_error: message,
-      });
-    }
+    res.json({ status, webhook_registered: status === 'active' });
     return;
   }
 

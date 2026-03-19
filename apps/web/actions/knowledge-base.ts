@@ -175,10 +175,17 @@ export async function reindexKnowledgeBase(kbId: string): Promise<{ queued: numb
   if (error) throw new Error(error.message)
 
   const docs = data ?? []
-  for (const doc of docs) {
-    await db.from('documents').update({ status: 'pending' }).eq('id', doc.id)
-    await triggerIngestion(doc.id, kbId)
-  }
+
+  // Update all docs to pending in one query
+  await db
+    .from('documents')
+    .update({ status: 'pending', error_message: null })
+    .in('id', docs.map((d) => d.id))
+
+  // Enqueue all ingestion jobs in parallel
+  await Promise.all(
+    docs.map((doc) => triggerIngestion(doc.id, kbId))
+  )
 
   revalidatePath(`/knowledge-base/${kbId}`)
   return { queued: docs.length }

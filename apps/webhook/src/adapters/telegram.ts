@@ -199,7 +199,9 @@ function isMentioned(msg: TelegramMessage, botUsername: string): boolean {
 
 function stripMention(text: string, botUsername: string): string {
   if (!botUsername) return text;
-  return text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
+  const escapedUsername = botUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mentionRegex = new RegExp(`@${escapedUsername}`, 'gi');
+  return text.replace(mentionRegex, '').trim();
 }
 
 /**

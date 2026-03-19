@@ -2,6 +2,7 @@ import { db } from '@eximpe-bot/shared';
 import { retrieveDocs, retrieveExperience } from './retrieve';
 import { webSearch } from './webSearch';
 import { getClaudeClient } from '../services/claude';
+import { embedText } from '../services/voyage';
 import { getGroupContext } from '../services/groupContext';
 import type {
   IncomingMessage,
@@ -165,10 +166,14 @@ export async function runPipeline(
   const searchQuery = await rewriteQuery(msg.text, claude);
 
   // ── Stage 1: Retrieval ────────────────────────────────────────────────────
+  // Embed the query once and share the vector across both retrieval functions
+  // to avoid paying two Voyage round-trips for the same string.
+
+  const queryEmbedding = await embedText(searchQuery);
 
   const [docChunks, expEntries] = await Promise.all([
-    retrieveDocs(searchQuery, bot as Bot, msg.apiVersion),
-    retrieveExperience(searchQuery, bot as Bot),
+    retrieveDocs(searchQuery, bot as Bot, msg.apiVersion, queryEmbedding),
+    retrieveExperience(searchQuery, bot as Bot, queryEmbedding),
   ]);
 
   const groupContext = await getGroupContext(

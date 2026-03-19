@@ -34,6 +34,13 @@ interface Props {
   initialDocuments: Document[]
 }
 
+function SortIcon({ k, sortKey, sortDir }: { k: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (sortKey !== k) return <ChevronsUpDownIcon className="ml-1 inline size-3.5 opacity-40" />
+  return sortDir === 'asc'
+    ? <ChevronUpIcon className="ml-1 inline size-3.5" />
+    : <ChevronDownIcon className="ml-1 inline size-3.5" />
+}
+
 export function DocumentsClient({ kbId, initialDocuments }: Props) {
   const [documents, setDocuments] = useState<Document[]>(initialDocuments)
   const [addSheetOpen, setAddSheetOpen] = useState(false)
@@ -78,13 +85,6 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortKey(key); setSortDir('asc') }
-  }
-
-  function SortIcon({ k }: { k: SortKey }) {
-    if (sortKey !== k) return <ChevronsUpDownIcon className="ml-1 inline size-3.5 opacity-40" />
-    return sortDir === 'asc'
-      ? <ChevronUpIcon className="ml-1 inline size-3.5" />
-      : <ChevronDownIcon className="ml-1 inline size-3.5" />
   }
 
   // Tab state
@@ -161,6 +161,12 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
     const allowed = ['pdf', 'docx', 'xlsx', 'csv', 'txt']
     if (!allowed.includes(ext)) {
       toast.error('Unsupported file type')
+      return
+    }
+
+    const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`File too large. Maximum size is 4 MB.`)
       return
     }
 
@@ -338,24 +344,24 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
                 <TableRow>
                   <TableHead>
                     <button type="button" onClick={() => handleSort('name')} className="flex items-center hover:text-foreground">
-                      Name<SortIcon k="name" />
+                      Name<SortIcon k="name" sortKey={sortKey} sortDir={sortDir} />
                     </button>
                   </TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>API Version</TableHead>
                   <TableHead>
                     <button type="button" onClick={() => handleSort('status')} className="flex items-center hover:text-foreground">
-                      Status<SortIcon k="status" />
+                      Status<SortIcon k="status" sortKey={sortKey} sortDir={sortDir} />
                     </button>
                   </TableHead>
                   <TableHead className="text-right">
                     <button type="button" onClick={() => handleSort('chunk_count')} className="flex items-center justify-end w-full hover:text-foreground">
-                      Chunks<SortIcon k="chunk_count" />
+                      Chunks<SortIcon k="chunk_count" sortKey={sortKey} sortDir={sortDir} />
                     </button>
                   </TableHead>
                   <TableHead>
                     <button type="button" onClick={() => handleSort('created_at')} className="flex items-center hover:text-foreground">
-                      Created<SortIcon k="created_at" />
+                      Created<SortIcon k="created_at" sortKey={sortKey} sortDir={sortDir} />
                     </button>
                   </TableHead>
                   <TableHead className="w-20" />
@@ -437,11 +443,11 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
 
       {/* Add Document Sheet */}
       <Sheet open={addSheetOpen} onOpenChange={(open) => { setAddSheetOpen(open); if (!open) resetSheet() }}>
-        <SheetHeader>
-          <SheetTitle>Add Document</SheetTitle>
-          <SheetClose onClose={() => setAddSheetOpen(false)} />
-        </SheetHeader>
         <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Add Document</SheetTitle>
+            <SheetClose onClose={() => setAddSheetOpen(false)} />
+          </SheetHeader>
           {/* Tab switcher */}
           <div className="flex gap-1 rounded-lg border border-border bg-muted/50 p-1 mb-4">
             {(['url', 'text', 'file'] as const).map((t) => (
@@ -566,19 +572,19 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
                   required
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 />
-                <p className="text-xs text-muted-foreground">Supported: PDF, DOCX, XLSX, CSV, TXT</p>
+                <p className="text-xs text-muted-foreground">Supported: PDF, DOCX, XLSX, CSV, TXT (max 4 MB)</p>
               </div>
             </form>
           )}
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setAddSheetOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="add-doc-form" disabled={isPending}>
+              {isPending ? 'Adding…' : 'Add Document'}
+            </Button>
+          </SheetFooter>
         </SheetContent>
-        <SheetFooter>
-          <Button variant="outline" onClick={() => setAddSheetOpen(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" form="add-doc-form" disabled={isPending}>
-            {isPending ? 'Adding…' : 'Add Document'}
-          </Button>
-        </SheetFooter>
       </Sheet>
 
       {/* Crawl Dialog */}

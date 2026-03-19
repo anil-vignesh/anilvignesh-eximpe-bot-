@@ -1,5 +1,4 @@
 import { db } from '@eximpe-bot/shared';
-import { embedText } from '../services/voyage';
 import type {
   Bot,
   RetrievedChunk,
@@ -11,13 +10,14 @@ import type {
 // ── Doc retrieval — version-aware ─────────────────────────────────────────────
 
 export async function retrieveDocs(
-  question:    string,
-  bot:         Bot,
-  apiVersion:  string,
+  question:        string,
+  bot:             Bot,
+  apiVersion:      string,
+  queryEmbedding:  number[],
 ): Promise<RetrievedChunk[]> {
   if (!bot.knowledge_base_id) return [];
 
-  const embedding = await embedText(question);
+  const embedding = queryEmbedding;
   const topK       = await getKbTopK(bot.knowledge_base_id);
   const threshold  = bot.doc_retrieval_threshold;
   const majorVersion = apiVersion.split('.')[0]; // e.g. "1" from "1.0.0"
@@ -85,12 +85,13 @@ async function vectorSearch(
 // ── Experience retrieval ──────────────────────────────────────────────────────
 
 export async function retrieveExperience(
-  question:   string,
-  bot:        Bot,
+  question:        string,
+  bot:             Bot,
+  queryEmbedding:  number[],
 ): Promise<RetrievedExperience[]> {
   if (!bot.experience_store_id) return [];
 
-  const embedding  = await embedText(question);
+  const embedding  = queryEmbedding;
   const threshold  = bot.exp_retrieval_threshold;
 
   // Get all accessible store IDs: own store + readable shared stores
