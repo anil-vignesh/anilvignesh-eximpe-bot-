@@ -11,7 +11,6 @@ import { getClaudeClient } from '../services/claude';
 // clearly unrelated to an API / technical integration question.
 
 async function classifyIntent(text: string): Promise<boolean> {
-  const claude = getClaudeClient();
   const prompt =
     `You are a classifier for an EximPe API support bot. ` +
     `EximPe is a cross-border payment gateway. The bot answers questions about API integration — ` +
@@ -21,13 +20,15 @@ async function classifyIntent(text: string): Promise<boolean> {
     `Message: ${text.slice(0, 300)}`;
 
   try {
+    const claude = getClaudeClient();
     const response = await claude.messages.create({
       model:      'claude-haiku-4-5-20251001',
       max_tokens: 5,
       messages:   [{ role: 'user', content: prompt }],
     });
     const answer = response.content.find((b) => b.type === 'text');
-    return (answer?.type === 'text' ? answer.text.trim().toLowerCase() : 'no') === 'yes';
+    const raw = answer?.type === 'text' ? answer.text.trim().toLowerCase() : '';
+    return raw.startsWith('yes');
   } catch {
     // On error, allow the message through — better to answer than to silently drop
     return true;
