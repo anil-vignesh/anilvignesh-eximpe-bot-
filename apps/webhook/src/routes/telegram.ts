@@ -119,7 +119,12 @@ router.post('/:botId', async (req: Request, res: Response) => {
     // 4. Intent check — only respond to API-related questions
     const isApiRelated = await classifyIntent(msg.text);
     if (!isApiRelated) {
-      console.log(`[telegram] Skipping non-API message from ${msg.senderRef}: "${msg.text.slice(0, 80)}"`);
+      console.log(`[telegram] Non-API message from ${msg.senderRef}: "${msg.text.slice(0, 80)}"`);
+      await sendTelegramMessage(config.tg_bot_token, {
+        chatId:    msg.chatId,
+        text:      "I can only help with EximPe API integration questions — payments, webhooks, authentication, UPI, mandates, refunds, and so on. For anything else, please reach out to the EximPe team directly.",
+        replyToId: msg.messageId,
+      });
       return;
     }
 
