@@ -32,6 +32,22 @@ export async function resolveBot(botId: string): Promise<ResolvedBot | null> {
 }
 
 /**
+ * Look up a WhatsApp bot by its phone number ID.
+ * Meta sends all webhooks to one endpoint — we identify the bot from the payload's metadata.
+ */
+export async function resolveBotByPhoneNumberId(phoneNumberId: string): Promise<ResolvedBot | null> {
+  const { data: config } = await db
+    .from('bot_channel_configs')
+    .select('bot_id')
+    .eq('wa_phone_number_id', phoneNumberId)
+    .maybeSingle();
+
+  if (!config) return null;
+
+  return resolveBot(config.bot_id);
+}
+
+/**
  * Look up which bot is assigned to a given chat.
  * Used for WhatsApp routing (V2).
  */

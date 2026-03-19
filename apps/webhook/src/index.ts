@@ -10,7 +10,10 @@ import { startCrawlWorker } from './queue/crawl.worker';
 const app: Express = express();
 const PORT = process.env.PORT ?? 3001;
 
-app.use(express.json());
+// Capture the raw body buffer before JSON parsing (needed for WhatsApp signature verification)
+app.use(express.json({
+  verify: (req: any, _res, buf) => { req.rawBody = buf; },
+}));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 
