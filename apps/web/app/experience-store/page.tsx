@@ -53,7 +53,7 @@ export default async function ExperienceStorePage() {
                         {store.entry_count} entr{store.entry_count !== 1 ? 'ies' : 'y'}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(store.created_at).toLocaleDateString()}
+                        {new Date(store.created_at).toLocaleDateString('en-GB')}
                       </span>
                     </div>
                   </CardContent>

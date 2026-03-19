@@ -188,7 +188,7 @@ export function EntriesClient({ storeId, initialEntries, currentStatus }: Props)
                     <StatusBadge status={entry.status} />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {new Date(entry.created_at).toLocaleDateString()}
+                    {new Date(entry.created_at).toLocaleDateString('en-GB')}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-0.5">

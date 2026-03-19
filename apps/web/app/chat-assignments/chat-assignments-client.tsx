@@ -188,7 +188,7 @@ export function ChatAssignmentsClient({ initialAssignments, bots, unrecognisedCh
                     </TableCell>
                     <TableCell className="text-sm font-mono">{assignment.api_version}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(assignment.assigned_at).toLocaleDateString()}
+                      {new Date(assignment.assigned_at).toLocaleDateString('en-GB')}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-0.5">

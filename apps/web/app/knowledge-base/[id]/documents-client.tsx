@@ -398,7 +398,7 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
                         {doc.chunk_count}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground" suppressHydrationWarning>
-                        {new Date(doc.created_at).toLocaleDateString()}
+                        {new Date(doc.created_at).toLocaleDateString('en-GB')}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
