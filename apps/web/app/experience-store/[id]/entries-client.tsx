@@ -14,7 +14,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { updateEntryStatus, updateEntry, deleteEntry } from '@/actions/experience-store'
 import type { ExperienceEntry } from '@/lib/types'
 import { toast } from 'sonner'
-import { ArchiveIcon, FlagIcon, PencilIcon, Trash2Icon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, FlagIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
 const STATUS_TABS = ['all', 'active', 'archived', 'flagged'] as const
 
@@ -191,7 +191,17 @@ export function EntriesClient({ storeId, initialEntries, currentStatus }: Props)
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-0.5">
-                      {entry.status !== 'archived' && (
+                      {entry.status === 'archived' ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          title="Unarchive"
+                          onClick={() => handleStatusChange(entry.id, 'active')}
+                          disabled={isPending}
+                        >
+                          <ArchiveRestoreIcon className="size-3.5 text-muted-foreground" />
+                        </Button>
+                      ) : (
                         <Button
                           variant="ghost"
                           size="icon-xs"
