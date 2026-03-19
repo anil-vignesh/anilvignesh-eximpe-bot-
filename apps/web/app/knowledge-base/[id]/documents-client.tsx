@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetClose } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import { addUrlDocument, addTextDocument, addFileDocument, deleteDocument, triggerCrawlAction, reindexKnowledgeBase } from '@/actions/knowledge-base'
+import { addUrlDocument, addTextDocument, addFileDocument, deleteDocument, triggerCrawlAction, reindexKnowledgeBase, reindexDocument } from '@/actions/knowledge-base'
 import type { Document } from '@/lib/types'
 import { toast } from 'sonner'
 import { PlusIcon, GlobeIcon, Trash2Icon, AlertCircleIcon, RefreshCwIcon } from 'lucide-react'
@@ -181,6 +181,20 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
     })
   }
 
+  function handleRetryDocument(docId: string) {
+    startTransition(async () => {
+      try {
+        await reindexDocument(docId, kbId)
+        setDocuments((prev) =>
+          prev.map((d) => d.id === docId ? { ...d, status: 'pending', error_message: null } : d)
+        )
+        toast.success('Queued for re-indexing')
+      } catch (err: any) {
+        toast.error(err.message ?? 'Failed to retry')
+      }
+    })
+  }
+
   const fileTypeVariantMap: Record<string, 'blue' | 'purple' | 'gray'> = {
     url:  'blue',
     pdf:  'purple',
@@ -263,18 +277,32 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
                       <TableCell className="text-right text-sm tabular-nums">
                         {doc.chunk_count}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-sm text-muted-foreground" suppressHydrationWarning>
                         {new Date(doc.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => setDeleteConfirmId(doc.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2Icon className="size-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {(doc.status === 'error' || doc.status === 'pending') && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleRetryDocument(doc.id)}
+                              disabled={isPending}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Retry indexing"
+                            >
+                              <RefreshCwIcon className="size-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => setDeleteConfirmId(doc.id)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2Icon className="size-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                     {doc.status === 'error' && doc.error_message && (
@@ -418,12 +446,13 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="file-input">File</Label>
-                <Input
+                <input
                   id="file-input"
                   type="file"
                   ref={fileRef}
                   accept=".pdf,.docx,.xlsx,.csv,.txt"
                   required
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <p className="text-xs text-muted-foreground">Supported: PDF, DOCX, XLSX, CSV, TXT</p>
               </div>

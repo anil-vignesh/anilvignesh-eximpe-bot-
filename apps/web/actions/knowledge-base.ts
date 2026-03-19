@@ -157,6 +157,13 @@ function mimeForType(fileType: string): string {
   return map[fileType] ?? 'application/octet-stream'
 }
 
+export async function reindexDocument(docId: string, kbId: string): Promise<void> {
+  const db = getDb()
+  await db.from('documents').update({ status: 'pending', error_message: null }).eq('id', docId)
+  await triggerIngestion(docId, kbId)
+  revalidatePath(`/knowledge-base/${kbId}`)
+}
+
 export async function reindexKnowledgeBase(kbId: string): Promise<{ queued: number }> {
   const db = getDb()
   const { data, error } = await db
