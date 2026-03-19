@@ -40,7 +40,7 @@ export default async function ExperienceStoreDetailPage({ params, searchParams }
         </div>
 
         {/* Entries table with filter tabs */}
-        <EntriesClient storeId={id} initialEntries={entries} currentStatus={status ?? 'all'} />
+        <EntriesClient key={status ?? 'all'} storeId={id} initialEntries={entries} currentStatus={status ?? 'all'} />
       </div>
     </div>
   )

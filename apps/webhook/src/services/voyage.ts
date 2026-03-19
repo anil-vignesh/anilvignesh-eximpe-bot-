@@ -14,19 +14,20 @@ function getClient(): VoyageAIClient {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Voyage AI free tier: 3 RPM = 1 call per 20 s.
-// We enforce a 21 s minimum gap between calls in-process so concurrent BullMQ
-// jobs can never trigger back-to-back Voyage requests regardless of concurrency config.
+// _blockedUntilMs is the earliest time the next call is allowed.
+// On a 429 we push it forward by a full 60 s (Voyage's rolling window).
 const MIN_CALL_INTERVAL_MS = parseInt(process.env.VOYAGE_BATCH_DELAY_MS ?? '21000', 10);
-let _lastCallMs = 0;
+let _blockedUntilMs = 0;
 
 async function waitForRateLimit(): Promise<void> {
-  const elapsed = Date.now() - _lastCallMs;
-  if (elapsed < MIN_CALL_INTERVAL_MS) {
-    const wait = MIN_CALL_INTERVAL_MS - elapsed;
+  const now  = Date.now();
+  const wait = _blockedUntilMs - now;
+  if (wait > 0) {
     console.log(`[voyage] rate-limit guard — waiting ${wait}ms`);
     await sleep(wait);
   }
-  _lastCallMs = Date.now();
+  // Reserve the next slot 21 s from now
+  _blockedUntilMs = Date.now() + MIN_CALL_INTERVAL_MS;
 }
 
 async function embedWithRetry(
@@ -41,9 +42,9 @@ async function embedWithRetry(
     const msg = err instanceof Error ? err.message : String(err);
     const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit');
     if (is429) {
-      // Force a full interval before the next call (could be this job retrying,
-      // or a different job — the global timestamp handles both)
-      _lastCallMs = Date.now();
+      // Back off for a full 60 s window — Voyage's quota resets over 60 s,
+      // so 21 s is not enough after hitting the limit
+      _blockedUntilMs = Date.now() + 60_000;
       throw err;
     }
     throw err;

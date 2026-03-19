@@ -104,6 +104,13 @@ export async function updateEntry(
 
 export async function deleteEntry(id: string, storeId: string): Promise<void> {
   const db = getDb()
+
+  // Nullify FK reference in conversation_logs before deleting
+  await db
+    .from('conversation_logs')
+    .update({ experience_entry_id: null })
+    .eq('experience_entry_id', id)
+
   const { error } = await db.from('experience_entries').delete().eq('id', id)
 
   if (error) throw new Error(error.message)
