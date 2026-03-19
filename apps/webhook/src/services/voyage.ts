@@ -19,19 +19,18 @@ const BATCH_DELAY_MS = parseInt(process.env.VOYAGE_BATCH_DELAY_MS ?? '21000', 10
 async function embedWithRetry(
   client: VoyageAIClient,
   input: string[],
-  retries = 5,
 ): Promise<number[][]> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let attempt = 0; attempt <= 1; attempt++) {
     try {
       const result = await client.embed({ input, model: 'voyage-3' });
       return result.data!.map((d) => d.embedding as number[]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit');
-      if (is429 && attempt < retries) {
-        const wait = BATCH_DELAY_MS * (attempt + 1);
-        console.warn(`[voyage] 429 rate limit — retrying in ${wait}ms (attempt ${attempt + 1}/${retries})`);
-        await sleep(wait);
+      if (is429 && attempt === 0) {
+        // One short sleep then retry — if it's still rate-limited, fail fast
+        // so BullMQ can reschedule with proper backoff instead of blocking the worker
+        await sleep(BATCH_DELAY_MS);
         continue;
       }
       throw err;

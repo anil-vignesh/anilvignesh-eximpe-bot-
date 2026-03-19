@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, UnrecoverableError } from 'bullmq';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
@@ -16,10 +16,20 @@ export interface IngestionJobData {
 // ── Text extractors ───────────────────────────────────────────────────────────
 
 async function extractFromUrl(url: string): Promise<string> {
-  const { data: html } = await axios.get(url, {
-    headers: { 'User-Agent': 'EximPeBot/1.0 (+https://eximpe.com)' },
-    timeout: 15_000,
-  });
+  let html: string;
+  try {
+    const res = await axios.get(url, {
+      headers: { 'User-Agent': 'EximPeBot/1.0 (+https://eximpe.com)' },
+      timeout: 15_000,
+    });
+    html = res.data;
+  } catch (err: unknown) {
+    const status = (err as any)?.response?.status;
+    if (status === 404 || status === 410) {
+      throw new UnrecoverableError(`URL returned ${status}: ${url}`);
+    }
+    throw err;
+  }
   const $ = cheerio.load(html);
 
   // Strip nav/sidebar/footer/chrome
@@ -375,17 +385,28 @@ async function processIngestionJob(job: Job<IngestionJobData>): Promise<void> {
 
 // ── Worker bootstrap ──────────────────────────────────────────────────────────
 
+// Custom backoff: 2 min * 2^attempt, plus random jitter up to 30 s
+// so batches of retried jobs spread out instead of hammering Voyage together.
+function ingestionBackoff(attemptsMade: number): number {
+  const base    = 120_000 * Math.pow(2, attemptsMade - 1); // 2m, 4m, 8m, 16m
+  const jitter  = Math.floor(Math.random() * 30_000);
+  return base + jitter;
+}
+
 export function startIngestionWorker(): Worker {
   const worker = new Worker<IngestionJobData>(
     'ingestion',
     processIngestionJob,
     {
-      connection:  getRedis(),
-      concurrency: 1,
-      // Voyage AI free tier: 3 RPM. Cap at 2 jobs/min to stay safely under.
+      connection:   getRedis(),
+      concurrency:  1,
+      // Voyage AI free tier: 3 RPM. Cap at 1 job/min to stay safely under.
       limiter: {
-        max:      2,
+        max:      1,
         duration: 60_000,
+      },
+      settings: {
+        backoffStrategy: ingestionBackoff,
       },
     },
   );

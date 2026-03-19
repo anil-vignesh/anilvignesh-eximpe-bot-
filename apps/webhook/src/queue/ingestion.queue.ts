@@ -9,10 +9,15 @@ export function getIngestionQueue(): Queue<IngestionJobData> {
     _queue = new Queue<IngestionJobData>('ingestion', {
       connection:   getRedis(),
       defaultJobOptions: {
-        attempts:  3,
-        backoff: { type: 'exponential', delay: 5000 },
+        attempts:  5,
+        // Custom backoff: 2 min base, exponential, with ±30 s jitter so retried jobs
+        // don't all collide at the same moment after a Voyage 429 wave.
+        backoff: {
+          type:  'custom',
+          delay: 120_000,
+        },
         removeOnComplete: 100,
-        removeOnFail:     50,
+        removeOnFail:     100,
       },
     });
   }
