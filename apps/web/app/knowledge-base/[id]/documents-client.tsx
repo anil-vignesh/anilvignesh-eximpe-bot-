@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useRef, useState, useTransition } from 'react'
+import React, { useRef, useState, useTransition, useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,10 +13,21 @@ import { StatusBadge } from '@/components/status-badge'
 import { addUrlDocument, addTextDocument, addFileDocument, deleteDocument, triggerCrawlAction, reindexKnowledgeBase, reindexDocument } from '@/actions/knowledge-base'
 import type { Document } from '@/lib/types'
 import { toast } from 'sonner'
-import { PlusIcon, GlobeIcon, Trash2Icon, AlertCircleIcon, RefreshCwIcon } from 'lucide-react'
+import { PlusIcon, GlobeIcon, Trash2Icon, AlertCircleIcon, RefreshCwIcon, SearchIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpDownIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Tab = 'url' | 'text' | 'file'
+type SortKey = 'name' | 'status' | 'chunk_count' | 'created_at'
+type SortDir = 'asc' | 'desc'
+type StatusFilter = 'all' | 'indexed' | 'error' | 'pending' | 'processing'
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'all',        label: 'All' },
+  { value: 'indexed',    label: 'Indexed' },
+  { value: 'error',      label: 'Error' },
+  { value: 'pending',    label: 'Pending' },
+  { value: 'processing', label: 'Processing' },
+]
 
 interface Props {
   kbId: string
@@ -29,6 +40,52 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  // Filter + sort state
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortKey, setSortKey] = useState<SortKey>('created_at')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  const visibleDocuments = useMemo(() => {
+    let list = documents
+
+    if (statusFilter !== 'all') {
+      list = list.filter((d) => d.status === statusFilter)
+    }
+
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter(
+        (d) =>
+          d.name.toLowerCase().includes(q) ||
+          (d.source_url ?? '').toLowerCase().includes(q),
+      )
+    }
+
+    list = [...list].sort((a, b) => {
+      let cmp = 0
+      if (sortKey === 'name')        cmp = a.name.localeCompare(b.name)
+      else if (sortKey === 'status') cmp = a.status.localeCompare(b.status)
+      else if (sortKey === 'chunk_count') cmp = (a.chunk_count ?? 0) - (b.chunk_count ?? 0)
+      else cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+
+    return list
+  }, [documents, search, statusFilter, sortKey, sortDir])
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  function SortIcon({ k }: { k: SortKey }) {
+    if (sortKey !== k) return <ChevronsUpDownIcon className="ml-1 inline size-3.5 opacity-40" />
+    return sortDir === 'asc'
+      ? <ChevronUpIcon className="ml-1 inline size-3.5" />
+      : <ChevronDownIcon className="ml-1 inline size-3.5" />
+  }
 
   // Tab state
   const [tab, setTab] = useState<Tab>('url')
@@ -228,6 +285,41 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
           </div>
         </div>
 
+        {/* Search + filter bar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px]">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or URL…"
+              className="pl-8 h-8 text-sm"
+            />
+          </div>
+          <div className="flex gap-1">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setStatusFilter(f.value)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors border',
+                  statusFilter === f.value
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'bg-background text-muted-foreground border-border hover:text-foreground',
+                )}
+              >
+                {f.label}
+                {f.value !== 'all' && (
+                  <span className="ml-1 opacity-60">
+                    {documents.filter((d) => d.status === f.value).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Table */}
         <div className="rounded-xl border border-border bg-card">
           {documents.length === 0 ? (
@@ -236,21 +328,41 @@ export function DocumentsClient({ kbId, initialDocuments }: Props) {
               <p className="text-sm font-medium">No documents yet</p>
               <p className="mt-1 text-xs text-muted-foreground">Add a document to get started.</p>
             </div>
+          ) : visibleDocuments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-sm text-muted-foreground">No documents match your filters.</p>
+            </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>
+                    <button type="button" onClick={() => handleSort('name')} className="flex items-center hover:text-foreground">
+                      Name<SortIcon k="name" />
+                    </button>
+                  </TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>API Version</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Chunks</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-12" />
+                  <TableHead>
+                    <button type="button" onClick={() => handleSort('status')} className="flex items-center hover:text-foreground">
+                      Status<SortIcon k="status" />
+                    </button>
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <button type="button" onClick={() => handleSort('chunk_count')} className="flex items-center justify-end w-full hover:text-foreground">
+                      Chunks<SortIcon k="chunk_count" />
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" onClick={() => handleSort('created_at')} className="flex items-center hover:text-foreground">
+                      Created<SortIcon k="created_at" />
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-20" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {documents.map((doc) => (
+                {visibleDocuments.map((doc) => (
                   <React.Fragment key={doc.id}>
                     <TableRow>
                       <TableCell className="max-w-[240px]">
